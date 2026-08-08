@@ -1,68 +1,291 @@
-import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { Queue } from 'bullmq';
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { Queue } from "bullmq";
 
-// Connect to the local Redis instance running in root docker-compose
-const deploymentQueue = new Queue('deployment-queue', {
-  connection: { host: 'localhost', port: 6379 },
+
+// Redis Queue
+const deploymentQueue = new Queue("deployment-queue", {
+  connection: {
+    host: "localhost",
+    port: 6379,
+  },
 });
 
-// GET /api/projects - Fetch all projects with their deployments
+
+// GET /api/projects
 export async function GET() {
   try {
+
     const projects = await prisma.project.findMany({
-      include: { deployments: true },
-      orderBy: { createdAt: 'desc' },
+      include: {
+        deployments: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
     });
-    return NextResponse.json(projects);
+
+
+    // Convert Prisma format -> Dashboard format
+    const formattedProjects = projects.map((project) => {
+
+      const latestDeployment =
+        project.deployments[0];
+
+
+      return {
+
+        id: project.id,
+
+        name: project.name,
+
+        // IMPORTANT:
+        // Dashboard expects repository
+        repository: project.githubRepo,
+
+        branch: project.branch,
+
+        framework: "Next.js",
+
+        status:
+          latestDeployment?.status ?? "PENDING",
+
+          url: null,
+
+        createdAt:
+          project.createdAt,
+
+          updatedAt:
+          project.createdAt,
+
+        lastDeploymentId:
+          latestDeployment?.id ?? null,
+
+      };
+
+    });
+
+
+    return NextResponse.json(formattedProjects);
+
+
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+
+    console.error(error);
+
+    return NextResponse.json(
+      {
+        error: error.message,
+      },
+      {
+        status: 500,
+      }
+    );
+
   }
 }
 
-// POST /api/projects - Create a new project and add a build job to BullMQ
+
+
+
+
+// POST /api/projects
 export async function POST(request: Request) {
+
   try {
+
+
     const body = await request.json();
-    const { name, githubRepo, branch } = body;
+
+
+    const {
+      name,
+      githubRepo,
+      branch,
+      framework,
+    } = body;
+
+
 
     if (!name || !githubRepo) {
-      return NextResponse.json({ error: 'Name and GitHub Repo are required.' }, { status: 400 });
+
+      return NextResponse.json(
+        {
+          error:
+          "Name and GitHub Repo are required.",
+        },
+        {
+          status:400,
+        }
+      );
+
     }
 
-    // Assign a dynamic internal host port between 3001 and 3999
-    const assignedPort = Math.floor(Math.random() * 900) + 3001;
 
-    // 1. Create Project in Neon PostgreSQL
-    const project = await prisma.project.create({
-      data: {
-        name,
-        githubRepo,
-        branch: branch || 'main',
-        port: assignedPort,
+
+    // Assign internal port
+
+    const assignedPort =
+      Math.floor(Math.random() * 900) + 3001;
+
+
+
+    // Create project
+
+    const project =
+      await prisma.project.create({
+
+        data: {
+
+          name,
+
+          githubRepo,
+
+          branch:
+            branch || "main",
+
+          port:
+            assignedPort,
+
+        },
+
+      });
+
+
+
+
+    // Create deployment
+
+    const deployment =
+      await prisma.deployment.create({
+
+        data: {
+
+          projectId:
+            project.id,
+
+          status:
+            "PENDING",
+
+        },
+
+      });
+
+
+
+
+
+    // Push job to Redis
+
+    await deploymentQueue.add(
+
+      "build-job",
+
+      {
+
+        deploymentId:
+          deployment.id,
+
+
+        projectId:
+          project.id,
+
+
+        projectName:
+          project.name,
+
+
+        repoUrl:
+          project.githubRepo,
+
+
+        branch:
+          project.branch,
+
+
+        assignedPort:
+          project.port,
+
+      }
+
+    );
+
+
+
+
+
+    // Return dashboard compatible object
+
+    return NextResponse.json(
+
+      {
+
+        id:
+          project.id,
+
+
+        name:
+          project.name,
+
+
+        repository:
+          project.githubRepo,
+
+
+        branch:
+          project.branch,
+
+
+        framework:
+          framework || "Next.js",
+
+
+        status:
+          deployment.status,
+
+
+        url:
+          null,
+
+
+        createdAt:
+          project.createdAt,
+
+
+        updatedAt:
+  project.createdAt,
+
+        lastDeploymentId:
+          deployment.id,
+
       },
-    });
 
-    // 2. Create Initial Pending Deployment Record
-    const deployment = await prisma.deployment.create({
-      data: {
-        projectId: project.id,
-        status: 'PENDING',
+      {
+        status:201,
+      }
+
+    );
+
+
+
+  } catch(error:any){
+
+
+    console.error(error);
+
+
+    return NextResponse.json(
+
+      {
+        error:error.message,
       },
-    });
 
-    // 3. Dispatch Job to BullMQ Queue
-    await deploymentQueue.add('build-job', {
-      deploymentId: deployment.id,
-      projectId: project.id,
-      projectName: project.name,
-      repoUrl: project.githubRepo,
-      branch: project.branch,
-      assignedPort: project.port,
-    });
+      {
+        status:400,
+      }
 
-    return NextResponse.json({ project, deployment }, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    );
+
   }
+
 }
