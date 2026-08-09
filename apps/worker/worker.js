@@ -1,6 +1,9 @@
 const { Worker } = require('bullmq');
 const Docker = require('dockerode');
 const { PrismaClient } = require('@prisma/client');
+const simpleGit = require('simple-git');
+const fs = require('fs-extra');
+const path = require('path');
 
 const prisma = new PrismaClient();
 const docker = new Docker();
@@ -9,6 +12,11 @@ const redisConnection = {
   host: 'localhost',
   port: 6379,
 };
+
+// Directory where repositories will be cloned
+const deploymentsDir = path.join(__dirname, 'deployments');
+
+fs.ensureDirSync(deploymentsDir);
 
 console.log('🚀 CloudScale Worker Engine Initialized...');
 console.log(
@@ -53,23 +61,59 @@ const worker = new Worker(
     });
 
     try {
-      // Step 1: Simulate GitHub Repository Cloning
-      console.log('[1/4] 📥 Cloning repository snapshot...');
+      // ==================================================
+      // STEP 1: REAL GITHUB REPOSITORY CLONE
+      // ==================================================
+
+      console.log('[1/4] 📥 Cloning GitHub repository...');
+
+      const deploymentDir = path.join(
+        deploymentsDir,
+        deploymentId
+      );
+
+      // Remove an old clone if one exists
+      await fs.remove(deploymentDir);
+
+      // Clone the requested branch
+      await simpleGit().clone(
+        repoUrl,
+        deploymentDir,
+        [
+          '--branch',
+          branch,
+          '--single-branch',
+        ]
+      );
+
+      console.log(
+        '[1/4] ✅ Repository cloned successfully.'
+      );
+
       await job.updateProgress(25);
 
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // ==================================================
+      // STEP 2: DOCKER BUILD
+      // ==================================================
 
-      // Step 2: Simulate Docker Image Build
       console.log(
         '[2/4] 🐳 Building Docker image "cloudscale/' +
           projectName +
           ':latest"...'
       );
+
+      // TEMPORARY:
+      // Docker build will be made real in the next step.
+      await new Promise((resolve) =>
+        setTimeout(resolve, 2000)
+      );
+
       await job.updateProgress(50);
 
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // ==================================================
+      // STEP 3: DOCKER ENGINE HEALTH CHECK
+      // ==================================================
 
-      // Step 3: Verify Docker Engine Health
       const info = await docker.info();
 
       console.log(
@@ -80,16 +124,21 @@ const worker = new Worker(
 
       await job.updateProgress(75);
 
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) =>
+        setTimeout(resolve, 1000)
+      );
 
-      // Step 4: Finish
+      // ==================================================
+      // STEP 4: DEPLOYMENT COMPLETE
+      // ==================================================
+
       console.log(
-        '[4/4] ✅ Container successfully provisioned! App live on port ' +
+        '[4/4] ✅ Container successfully provisioned! ' +
+          'App live on port ' +
           assignedPort +
           '.'
       );
 
-      // Update PostgreSQL deployment
       await prisma.deployment.update({
         where: {
           id: deploymentId,
@@ -98,6 +147,7 @@ const worker = new Worker(
           status: 'DEPLOYED',
           logs:
             `Deployment completed successfully. ` +
+            `Repository cloned to ${deploymentDir}. ` +
             `App live on port ${assignedPort}.`,
         },
       });
@@ -106,7 +156,8 @@ const worker = new Worker(
 
       return {
         status: 'DEPLOYED',
-        containerName: 'app-' + projectName,
+        containerName:
+          'app-' + projectName,
         liveUrl:
           'http://' +
           projectName +
@@ -119,7 +170,6 @@ const worker = new Worker(
         error.message
       );
 
-      // Update PostgreSQL deployment as FAILED
       await prisma.deployment.update({
         where: {
           id: deploymentId,
@@ -138,21 +188,30 @@ const worker = new Worker(
   }
 );
 
-worker.on('completed', (job, returnvalue) => {
-  console.log(
-    '✅ [Job ID: ' +
-      job.id +
-      '] COMPLETED SUCCESSFULLY!'
-  );
+worker.on(
+  'completed',
+  (job, returnvalue) => {
+    console.log(
+      '✅ [Job ID: ' +
+        job.id +
+        '] COMPLETED SUCCESSFULLY!'
+    );
 
-  console.log('   Result:', returnvalue);
-});
+    console.log(
+      '   Result:',
+      returnvalue
+    );
+  }
+);
 
-worker.on('failed', (job, err) => {
-  console.error(
-    '❌ [Job ID: ' +
-      job?.id +
-      '] FAILED: ' +
-      err.message
-  );
-});
+worker.on(
+  'failed',
+  (job, err) => {
+    console.error(
+      '❌ [Job ID: ' +
+        job?.id +
+        '] FAILED: ' +
+        err.message
+    );
+  }
+);

@@ -17,7 +17,7 @@ async function sendTestJob() {
     projectId: 'aa907dff-cfb8-4e05-9bdf-1956a73f0946',
     projectName: 'worker-test-app',
     repoUrl: 'https://github.com/expressjs/express',
-    branch: 'main',
+    branch: 'master',
     assignedPort: 3010,
   });
 
