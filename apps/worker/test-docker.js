@@ -12,7 +12,7 @@ async function testConnection() {
     const containers = await docker.listContainers();
     console.log('\n?? Found ' + containers.length + ' running container(s):');
     containers.forEach((c) => {
-      console.log('   • Name: ' + c.Names[0] + ' | Image: ' + c.Image);
+      console.log('   ï¿½ Name: ' + c.Names[0] + ' | Image: ' + c.Image);
     });
   } catch (err) {
     console.error('? Error connecting to Docker:', err.message);

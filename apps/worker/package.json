@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
+    "@prisma/client": "^6.19.3",
     "bullmq": "^6.0.9",
     "dockerode": "^5.0.1",
     "fs-extra": "^11.4.0",
@@ -8,5 +9,8 @@
     "ioredis": "^6.0.0",
     "monaco-editor": "^0.55.1",
     "simple-git": "^3.36.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.19.3"
   }
 }
