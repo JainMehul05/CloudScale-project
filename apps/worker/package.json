@@ -4,6 +4,7 @@
     "@prisma/client": "^6.19.3",
     "bullmq": "^6.0.9",
     "dockerode": "^5.0.1",
+    "dotenv": "^17.4.2",
     "fs-extra": "^11.4.0",
     "groq-sdk": "^1.5.0",
     "ioredis": "^6.0.0",

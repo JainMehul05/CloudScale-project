@@ -1,3 +1,5 @@
+require("dotenv").config();
+
 const { Worker } = require('bullmq');
 const Docker = require('dockerode');
 const { PrismaClient } = require('@prisma/client');
