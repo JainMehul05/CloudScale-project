@@ -18,8 +18,8 @@ async function sendTestJob() {
     const project = await prisma.project.create({
         data: {
             name: `worker-test-app-${Date.now()}`,
-            githubRepo: "https://github.com/expressjs/express",
-            branch: "master",
+            githubRepo: "https://github.com/JainMehul05/cloudscale-test-app",
+            branch: "main",
             port: 3000 + Math.floor(Math.random() * 900) + 1
         }
     });
