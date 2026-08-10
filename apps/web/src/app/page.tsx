@@ -18,7 +18,7 @@ import {
 import Navbar from "@/components/Navbar";
 import ProductPreview from "@/components/ProductPreview";
 
-const GITHUB_URL = "YOUR_GITHUB_URL_PLACEHOLDER";
+const GITHUB_URL = "https://github.com/cloudscale/cloudscale";
 
 function GrainOverlay() {
   return (

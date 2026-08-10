@@ -18,11 +18,16 @@ model Project {
 }
 
 model Deployment {
-  id          String   @id @default(uuid())
-  projectId   String
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  status      String   @default("PENDING")
-  logs        String?  @db.Text
-  aiDiagnosis Json?
-  createdAt   DateTime @default(now())
+  id            String   @id @default(uuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status        String   @default("PENDING")
+  logs          String?  @db.Text
+  aiDiagnosis   Json?
+  createdAt     DateTime @default(now())
+
+  containerId   String?
+  containerName String?
+  containerPort Int?
+  imageName     String?
 }

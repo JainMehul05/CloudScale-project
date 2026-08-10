@@ -1,34 +1,76 @@
 const { Queue } = require('bullmq');
+const { PrismaClient } = require('@prisma/client');
 
-const redisConnection = {
-  host: 'localhost',
-  port: 6379,
-};
+const prisma = new PrismaClient();
 
 const deploymentQueue = new Queue('deployment-queue', {
-  connection: redisConnection,
+    connection: {
+        host: 'localhost',
+        port: 6379,
+    },
 });
 
+
 async function sendTestJob() {
-  console.log('📦 Pushing real deployment job into Redis queue...');
 
-  const job = await deploymentQueue.add('build-and-deploy', {
-    deploymentId: '01b7b8e2-f6f1-4897-ae43-69c4ae874bdc',
-    projectId: 'aa907dff-cfb8-4e05-9bdf-1956a73f0946',
-    projectName: 'worker-test-app',
-    repoUrl: 'https://github.com/expressjs/express',
-    branch: 'master',
-    assignedPort: 3010,
-  });
+    console.log("📦 Creating test project...");
 
-  console.log('✅ Deployment job queued successfully!');
-  console.log('Job ID:', job.id);
+    const project = await prisma.project.create({
+        data: {
+            name: `worker-test-app-${Date.now()}`,
+            githubRepo: "https://github.com/expressjs/express",
+            branch: "master",
+            port: 3000 + Math.floor(Math.random() * 900) + 1
+        }
+    });
 
-  await deploymentQueue.close();
+
+    console.log("✅ Project created:");
+    console.log(project.id);
+
+
+    console.log("📦 Creating deployment...");
+
+    const deployment = await prisma.deployment.create({
+        data: {
+            projectId: project.id,
+            status: "PENDING"
+        }
+    });
+
+
+    console.log("✅ Deployment created:");
+    console.log(deployment.id);
+
+
+
+    console.log("🚀 Sending job to Redis...");
+
+
+    const job = await deploymentQueue.add(
+        "build-and-deploy",
+        {
+            deploymentId: deployment.id,
+            projectId: project.id,
+            projectName: project.name,
+            repoUrl: project.githubRepo,
+            branch: project.branch,
+            assignedPort: project.port
+        }
+    );
+
+
+    console.log("✅ Job queued");
+    console.log("Job ID:", job.id);
+
+
+    await deploymentQueue.close();
+    await prisma.$disconnect();
 }
 
-sendTestJob().catch((error) => {
-  console.error('❌ Failed to queue deployment job:');
-  console.error(error);
-  process.exitCode = 1;
+
+sendTestJob()
+.catch(err => {
+    console.error(err);
+    process.exit(1);
 });

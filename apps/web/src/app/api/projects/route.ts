@@ -69,13 +69,13 @@ export async function GET() {
     return NextResponse.json(formattedProjects);
 
 
-  } catch (error: any) {
+  } catch (error: unknown) {
 
     console.error(error);
 
     return NextResponse.json(
       {
-        error: error.message,
+        error: error instanceof Error ? error.message : 'Unknown error',
       },
       {
         status: 500,
@@ -268,7 +268,7 @@ export async function POST(request: Request) {
 
 
 
-  } catch(error:any){
+  } catch (error: unknown) {
 
 
     console.error(error);
@@ -277,7 +277,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
 
       {
-        error:error.message,
+        error: error instanceof Error ? error.message : "Unknown error",
       },
 
       {

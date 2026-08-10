@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   motion,
   useScroll,
@@ -14,7 +15,7 @@ import {
 } from "lucide-react";
 
 
-const GITHUB_URL = "YOUR_GITHUB_URL_PLACEHOLDER";
+const GITHUB_URL = "https://github.com/cloudscale/cloudscale";
 
 
 const NAV_LINKS = [
@@ -233,7 +234,7 @@ export default function Navbar() {
           {/* LOGO */}
 
 
-          <a
+          <Link
             href="/"
             className="
             flex
@@ -282,7 +283,7 @@ export default function Navbar() {
             </span>
 
 
-          </a>
+          </Link>
 
 
 

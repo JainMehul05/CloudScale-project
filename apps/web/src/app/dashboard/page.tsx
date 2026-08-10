@@ -114,16 +114,17 @@ export default function DashboardPage() {
   
   };
   // Fetch real projects from backend
-useEffect(() => {
-  fetchProjects();
+  useEffect(() => {
+    const init = async () => {
+      fetchProjects();
+      const interval = setInterval(() => {
+        fetchProjects();
+      }, 10000);
 
-  const interval = setInterval(() => {
-    fetchProjects();
-  }, 10000);
-
-  return () => clearInterval(interval);
-
-}, []);
+      return () => clearInterval(interval);
+    };
+    init();
+  }, []);
 
 
 const handleCreateDeployment = async (e: FormEvent) => {
