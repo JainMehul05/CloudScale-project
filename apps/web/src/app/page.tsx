@@ -18,7 +18,7 @@ import {
 import Navbar from "@/components/Navbar";
 import ProductPreview from "@/components/ProductPreview";
 
-const GITHUB_URL = "https://github.com/cloudscale/cloudscale";
+const GITHUB_URL = "https://github.com/your-org/cloudscale";
 
 function GrainOverlay() {
   return (
@@ -145,7 +145,7 @@ function Hero() {
         </p>
 
         <div className="mx-auto mt-10 flex max-w-md flex-col items-center justify-center gap-3 sm:max-w-none sm:flex-row">
-          <PrimaryButton href="#product" icon={<ArrowRight className="h-4 w-4" />}>
+          <PrimaryButton href="/auth/signin" icon={<ArrowRight className="h-4 w-4" />}>
             Deploy Now
           </PrimaryButton>
           <SecondaryButton
@@ -380,7 +380,7 @@ function CallToAction() {
           production before your coffee gets cold.
         </p>
         <div className="relative mx-auto mt-8 flex max-w-md flex-col items-center justify-center gap-3 sm:max-w-none sm:flex-row">
-          <PrimaryButton href="#product" icon={<ArrowRight className="h-4 w-4" />}>
+        <PrimaryButton href="/auth/signin" icon={<ArrowRight className="h-4 w-4" />}>
             Deploy Now
           </PrimaryButton>
           <SecondaryButton

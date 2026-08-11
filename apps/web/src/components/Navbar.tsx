@@ -370,27 +370,23 @@ export default function Navbar() {
           >
 
 
-            <a
-
-              href="#"
-
-              className="
-              text-sm
-              text-zinc-300
-              hover:text-white
-              "
-            >
-
-              Login
-
-            </a>
+<Link
+  href="/auth/signin"
+  className="
+  text-sm
+  text-zinc-300
+  hover:text-white
+  "
+>
+  Login
+</Link>
 
 
 
 
             <motion.a
 
-              href="#"
+              href="/auth/signin"
 
               whileHover={{
                 scale:1.05
@@ -567,35 +563,37 @@ export default function Navbar() {
                 >
 
 
-                  <a
-                    href="#"
-                    className="
-                    block
-                    text-center
-                    py-2
-                    text-zinc-300
-                    "
-                  >
-                    Login
-                  </a>
+<Link
+  href="/auth/signin"
+  onClick={() => setOpen(false)}
+  className="
+  block
+  text-center
+  py-2
+  text-zinc-300
+  "
+>
+  Login
+</Link>
 
 
 
-                  <a
-                    href="#"
-                    className="
-                    block
-                    rounded-md
-                    bg-white
-                    py-2
-                    text-center
-                    text-sm
-                    font-semibold
-                    text-black
-                    "
-                  >
-                    Get Started
-                  </a>
+<Link
+  href="/auth/signin"
+  onClick={() => setOpen(false)}
+  className="
+  block
+  rounded-md
+  bg-white
+  py-2
+  text-center
+  text-sm
+  font-semibold
+  text-black
+  "
+>
+  Get Started
+</Link>
 
 
                 </div>

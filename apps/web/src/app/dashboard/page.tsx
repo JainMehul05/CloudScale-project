@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
 import {
   LayoutDashboard,
   Rocket,
@@ -22,8 +23,13 @@ import {
   Search,
   Server,
   Database,
-  Layers
+  Layers,
+  TerminalSquare,
+  LogOut,
 } from "lucide-react";
+
+import { DeploymentLogViewer } from "@/components/DeploymentLogViewer";
+import { signOut } from "next-auth/react";
 
 // ---------------------------------------------------------------------------
 // Types & Interfaces (Preserved from existing logic)
@@ -66,6 +72,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [userEmail, setUserEmail] = useState("");
   
   // Modal State
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
@@ -76,55 +83,52 @@ export default function DashboardPage() {
     branch: "main",
     framework: "Next.js"
   });
-  
+
+  // Log Viewer State
+  const [logViewerDeploymentId, setLogViewerDeploymentId] = useState<string | null>(null);
+
   const fetchProjects = async () => {
-  
     try {
-  
       setIsLoading(true);
-  
-      const res = await fetch("/api/projects", {
-        cache: "no-store",
-      });
-  
-  
-      if (!res.ok) {
-        throw new Error("Failed to fetch projects");
-      }
-  
-  
+      const res = await fetch("/api/projects", { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed to fetch projects");
       const data = await res.json();
-  
-  
       setProjects(data);
-  
-  
     } catch (error) {
-  
-      console.error(
-        "Failed to fetch projects:",
-        error
-      );
-  
+      console.error("Failed to fetch projects:", error);
     } finally {
-  
       setIsLoading(false);
-  
     }
-  
   };
+
+  const fetchUser = async () => {
+    try {
+      const res = await fetch("/api/auth/session", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.user?.email) setUserEmail(data.user.email);
+      }
+    } catch {
+      // Ignore
+    }
+  };
+
   // Fetch real projects from backend
   useEffect(() => {
     const init = async () => {
       fetchProjects();
+      fetchUser();
       const interval = setInterval(() => {
         fetchProjects();
       }, 10000);
-
       return () => clearInterval(interval);
     };
     init();
   }, []);
+
+  const handleSignOut = async () => {
+    await signOut({ callbackUrl: "/" });
+  };
 
 
 const handleCreateDeployment = async (e: FormEvent) => {
@@ -331,13 +335,20 @@ const handleCreateDeployment = async (e: FormEvent) => {
         <div className="p-4 border-t border-white/10">
           <div className="flex items-center gap-3 rounded-xl bg-white/[0.02] p-3 border border-white/5">
             <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-violet-500 to-fuchsia-500 flex items-center justify-center text-xs text-white font-medium shadow-inner">
-              JD
+              {userEmail ? userEmail.charAt(0).toUpperCase() : "U"}
             </div>
             <div className="flex flex-col">
-              <span className="text-sm font-medium text-white leading-tight">John Doe</span>
+              <span className="text-sm font-medium text-white leading-tight">{userEmail || "Loading..."}</span>
               <span className="text-xs text-zinc-500">Free Tier</span>
             </div>
           </div>
+          <button
+            onClick={handleSignOut}
+            className="mt-3 w-full flex items-center gap-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            Sign Out
+          </button>
         </div>
       </motion.aside>
 
@@ -359,7 +370,7 @@ const handleCreateDeployment = async (e: FormEvent) => {
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex items-center text-sm">
-              <span className="text-zinc-400 hover:text-white cursor-pointer transition-colors">johndoe</span>
+              <span className="text-zinc-400 hover:text-white cursor-pointer transition-colors">{userEmail || "user"}</span>
               <span className="mx-2 text-zinc-700">/</span>
               <span className="font-medium text-white">Projects</span>
             </div>
@@ -382,6 +393,13 @@ const handleCreateDeployment = async (e: FormEvent) => {
             >
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">New Project</span>
+            </button>
+            <button
+              onClick={handleSignOut}
+              className="hidden md:flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Sign Out
             </button>
           </div>
         </header>
@@ -441,10 +459,9 @@ const handleCreateDeployment = async (e: FormEvent) => {
                     const statusConfig = getStatusConfig(project.status);
                     
                     return (
-                      <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
+                      <Link
                         key={project.id}
+                        href={`/dashboard/projects/${project.id}`}
                         className="group flex flex-col bg-[#111111] border border-white/10 hover:border-white/20 rounded-xl overflow-hidden transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.5)] hover:shadow-[0_8px_30px_-4px_rgba(59,130,246,0.1)]"
                       >
                         {/* Card Header */}
@@ -487,22 +504,33 @@ const handleCreateDeployment = async (e: FormEvent) => {
                             {statusConfig.text}
                           </div>
                           
-                          {project.url ? (
-                            <a 
-                              href={project.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
-                            >
-                              Visit <Globe className="w-3.5 h-3.5" />
-                            </a>
-                          ) : (
-                            <span className="text-xs font-mono text-zinc-600">
-                              {project.id.split('_')[1]}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {project.lastDeploymentId && (
+                              <button
+                                onClick={() => setLogViewerDeploymentId(project.lastDeploymentId!)}
+                                className="flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+                              >
+                                <TerminalSquare className="w-3.5 h-3.5" />
+                                Logs
+                              </button>
+                            )}
+                            {project.url ? (
+                              <a 
+                                href={project.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+                              >
+                                Visit <Globe className="w-3.5 h-3.5" />
+                              </a>
+                            ) : (
+                              <span className="text-xs font-mono text-zinc-600">
+                                {project.id.split('_')[1]}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </motion.div>
+                      </Link>
                     );
                   })}
                 </div>
@@ -633,6 +661,34 @@ const handleCreateDeployment = async (e: FormEvent) => {
                   </div>
                 </form>
               </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ----------------------------------------------------------------------
+          LOG VIEWER MODAL
+      ---------------------------------------------------------------------- */}
+      <AnimatePresence>
+        {logViewerDeploymentId && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setLogViewerDeploymentId(null)}
+              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="fixed left-1/2 top-1/2 z-50 w-full max-w-4xl -translate-x-1/2 -translate-y-1/2 p-4"
+            >
+              <DeploymentLogViewer
+                deploymentId={logViewerDeploymentId}
+                onClose={() => setLogViewerDeploymentId(null)}
+              />
             </motion.div>
           </>
         )}
