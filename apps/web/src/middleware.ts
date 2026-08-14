@@ -7,7 +7,9 @@ export default auth((req) => {
 
   if (isOnDashboard) {
     if (!isLoggedIn) {
-      return Response.redirect(new URL("/auth/signin", req.nextUrl));
+      const signInUrl = new URL("/auth/signin", req.nextUrl);
+      signInUrl.searchParams.set("callbackUrl", req.nextUrl.pathname);
+      return Response.redirect(signInUrl);
     }
   }
 
@@ -22,5 +24,14 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/api/:path*"],
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico, sitemap.xml, robots.txt (metadata files)
+     * - public folder
+     */
+    "/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|public/).*)",
+  ],
 };

@@ -10,6 +10,12 @@ export const metadata: Metadata = {
   title: "CloudScale | Deploy Applications Automatically",
   description:
     "CloudScale is a cloud-native deployment platform that builds Docker containers, manages deployments, and provides AI-powered debugging.",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon-16x16.png",
+    apple: "/apple-touch-icon.png",
+  },
+  manifest: "/site.webmanifest",
 };
 
 export default function RootLayout({
@@ -19,6 +25,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="scroll-smooth">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      </head>
       <body
         className={`${display.variable} ${body.variable} ${mono.variable} bg-black font-sans text-white antialiased selection:bg-blue-500/30`}
       >

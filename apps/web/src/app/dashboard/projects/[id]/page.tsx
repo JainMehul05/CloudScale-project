@@ -12,7 +12,6 @@ import {
   Terminal,
   Activity,
   Globe,
-  Layers,
   Key,
   Container,
   Copy,
@@ -22,8 +21,10 @@ import {
   Trash2,
   AlertTriangle,
   X,
+  Play,
 } from "lucide-react";
 import { EnvironmentVariableManager } from "@/components/EnvironmentVariableManager";
+import { CloudScaleLogo } from "@/components/ui/CloudScaleLogo";
 
 type DeploymentStatus = "PENDING" | "BUILDING" | "DEPLOYED" | "FAILED";
 
@@ -114,6 +115,7 @@ export default function ProjectDetailPage({
   const [copied, setCopied] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [isDeploying, setIsDeploying] = useState(false);
 
   const showToast = (message: string, type: "success" | "error") => {
     setToast({ message, type });
@@ -148,6 +150,35 @@ export default function ProjectDetailPage({
     await navigator.clipboard.writeText(text);
     setCopied(label);
     setTimeout(() => setCopied(null), 2000);
+  };
+
+  const handleDeploy = async () => {
+    setIsDeploying(true);
+    try {
+      const { id: projectId } = await params;
+      const res = await fetch(`/api/projects/${projectId}/deploy`, {
+        method: "POST",
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to create deployment");
+      }
+
+      await res.json();
+      showToast("Deployment queued successfully", "success");
+
+      // Refresh project to show new deployment
+      const projectRes = await fetch(`/api/projects/${projectId}`, { cache: "no-store" });
+      if (projectRes.ok) {
+        const projectData = await projectRes.json();
+        setProject(projectData);
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to create deployment", "error");
+    } finally {
+      setIsDeploying(false);
+    }
   };
 
   const handleDeploymentAction = async (
@@ -250,6 +281,7 @@ export default function ProjectDetailPage({
               <span className="font-medium">Projects</span>
             </a>
             <div className="flex items-center gap-2 px-3 py-1 bg-white/[0.03] border border-white/10 rounded-lg">
+              <CloudScaleLogo size="sm" className="text-white" />
               <span className="text-sm font-medium text-white">{project.name}</span>
               <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium border ${statusConfig.styles}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dot}`} />
@@ -259,6 +291,23 @@ export default function ProjectDetailPage({
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              onClick={handleDeploy}
+              disabled={isDeploying || project.status === "BUILDING" || project.status === "PENDING"}
+              className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-b from-blue-500 to-cyan-600 hover:from-blue-400 hover:to-cyan-500 text-white text-sm font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_-5px_rgba(59,130,246,0.4)]"
+            >
+              {isDeploying ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Deploying...
+                </>
+              ) : (
+                <>
+                  <Play className="w-3.5 h-3.5" />
+                  Deploy
+                </>
+              )}
+            </button>
             {project.url && (
               <a
                 href={project.url}
@@ -292,9 +341,7 @@ export default function ProjectDetailPage({
         <main className="flex-1 overflow-y-auto p-4 lg:p-8">
           <div className="max-w-6xl mx-auto space-y-6">
             <div className="flex items-center gap-4 border-b border-white/10 pb-4">
-              <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400">
-                <Layers className="w-6 h-6 text-white" />
-              </div>
+              <CloudScaleLogo size="lg" className="text-white" />
               <div>
                 <h1 className="text-2xl font-semibold text-white">{project.name}</h1>
                 <p className="text-sm text-zinc-500">{project.repository}</p>

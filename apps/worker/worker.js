@@ -12,6 +12,19 @@ const cron = require('node-cron');
 const prisma = new PrismaClient();
 const docker = new Docker();
 
+function cleanLogs(logs) {
+  return String(logs).replace(/\0/g, "");
+}
+
+function publishLog(deploymentId, message) {
+  const Redis = require('ioredis');
+  const redis = new Redis({ host: 'localhost', port: 6379, lazyConnect: true });
+  redis.connect().then(() => {
+    redis.publish(`logs:${deploymentId}`, cleanLogs(message)).catch(() => {});
+    redis.quit().catch(() => {});
+  }).catch(() => {});
+}
+
 const redisConnection = {
   host: 'localhost',
   port: 6379,
@@ -23,17 +36,16 @@ const deploymentsDir = path.join(__dirname, 'deployments');
 fs.ensureDirSync(deploymentsDir);
 
 // Cleanup configuration
-const CLEANUP_DAYS = 7; // Delete deployments older than 7 days
-const CLEANUP_SCHEDULE = '0 3 * * *'; // Run at 3 AM daily
+const CLEANUP_DAYS = 7;
+const CLEANUP_SCHEDULE = '0 3 * * *';
 
 async function cleanupOldDeployments() {
   console.log('[Cleanup] Starting deployment cleanup...');
-  
+
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - CLEANUP_DAYS);
-  
+
   try {
-    // Find old deployments that are DEPLOYED or FAILED
     const oldDeployments = await prisma.deployment.findMany({
       where: {
         status: { in: ['DEPLOYED', 'FAILED'] },
@@ -46,12 +58,11 @@ async function cleanupOldDeployments() {
         projectId: true,
       },
     });
-    
+
     console.log(`[Cleanup] Found ${oldDeployments.length} old deployments to clean up`);
-    
+
     for (const deployment of oldDeployments) {
       try {
-        // Stop and remove container if it exists
         if (deployment.containerId) {
           try {
             const container = docker.getContainer(deployment.containerId);
@@ -62,29 +73,26 @@ async function cleanupOldDeployments() {
             console.error(`[Cleanup] Failed to remove container ${deployment.containerId}:`, containerError.message);
           }
         }
-        
-        // Remove deployment directory
+
         const deploymentDir = path.join(deploymentsDir, deployment.id);
         await fs.remove(deploymentDir).catch(() => {});
-        
-        // Delete deployment record from database
+
         await prisma.deployment.delete({
           where: { id: deployment.id },
         });
-        
+
         console.log(`[Cleanup] Cleaned up deployment: ${deployment.id}`);
       } catch (deploymentError) {
         console.error(`[Cleanup] Failed to clean up deployment ${deployment.id}:`, deploymentError.message);
       }
     }
-    
+
     console.log('[Cleanup] Deployment cleanup completed');
   } catch (error) {
     console.error('[Cleanup] Error during cleanup:', error.message);
   }
 }
 
-// Schedule cleanup job
 cron.schedule(CLEANUP_SCHEDULE, () => {
   cleanupOldDeployments();
 }, {
@@ -94,7 +102,6 @@ cron.schedule(CLEANUP_SCHEDULE, () => {
 
 console.log(`[Cleanup] Scheduled cleanup job to run daily at 3 AM UTC (keeping last ${CLEANUP_DAYS} days)`);
 
-// Run cleanup once on startup (optional - comment out if not desired)
 cleanupOldDeployments();
 
 function validateRepoUrl(url) {
@@ -149,10 +156,6 @@ function checkDockerfileExists(dir) {
   return true;
 }
 
-/**
- * Detect framework from repository files
- * Returns framework info for metadata/logging - does not block deployment
- */
 function detectFramework(dir) {
   const framework = {
     name: 'unknown',
@@ -163,70 +166,61 @@ function detectFramework(dir) {
   };
 
   try {
-    // Check package.json for Node.js ecosystems
     const packageJsonPath = path.join(dir, 'package.json');
     if (fs.existsSync(packageJsonPath)) {
       const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
       const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
 
-      // Next.js detection
       if (deps.next) {
         framework.name = 'nextjs';
         framework.version = deps.next;
-        framework.packageManager = packageJson.packageManager || (fs.existsSync(path.join(dir, 'pnpm-lock.yaml')) ? 'pnpm' : 
+        framework.packageManager = packageJson.packageManager || (fs.existsSync(path.join(dir, 'pnpm-lock.yaml')) ? 'pnpm' :
                               fs.existsSync(path.join(dir, 'yarn.lock')) ? 'yarn' : 'npm');
         framework.suggestedDockerfile = 'nextjs';
       }
-      // React + Vite detection
       else if (deps.react && deps.vite) {
         framework.name = 'react-vite';
         framework.version = deps.react;
-        framework.packageManager = packageJson.packageManager || (fs.existsSync(path.join(dir, 'pnpm-lock.yaml')) ? 'pnpm' : 
+        framework.packageManager = packageJson.packageManager || (fs.existsSync(path.join(dir, 'pnpm-lock.yaml')) ? 'pnpm' :
                               fs.existsSync(path.join(dir, 'yarn.lock')) ? 'yarn' : 'npm');
         framework.suggestedDockerfile = 'react-vite';
       }
-      // React (CRA or other) detection
       else if (deps.react) {
         framework.name = 'react';
         framework.version = deps.react;
-        framework.packageManager = packageJson.packageManager || (fs.existsSync(path.join(dir, 'pnpm-lock.yaml')) ? 'pnpm' : 
+        framework.packageManager = packageJson.packageManager || (fs.existsSync(path.join(dir, 'pnpm-lock.yaml')) ? 'pnpm' :
                               fs.existsSync(path.join(dir, 'yarn.lock')) ? 'yarn' : 'npm');
         framework.suggestedDockerfile = 'react';
       }
-      // Vue detection
       else if (deps.vue) {
         framework.name = 'vue';
         framework.version = deps.vue;
-        framework.packageManager = packageJson.packageManager || (fs.existsSync(path.join(dir, 'pnpm-lock.yaml')) ? 'pnpm' : 
+        framework.packageManager = packageJson.packageManager || (fs.existsSync(path.join(dir, 'pnpm-lock.yaml')) ? 'pnpm' :
                               fs.existsSync(path.join(dir, 'yarn.lock')) ? 'yarn' : 'npm');
         framework.suggestedDockerfile = 'vue';
       }
-      // Node.js/Express detection
       else if (deps.express || deps.fastify || deps.koa || deps.hapi) {
         framework.name = 'nodejs';
         framework.version = process.version;
-        framework.packageManager = packageJson.packageManager || (fs.existsSync(path.join(dir, 'pnpm-lock.yaml')) ? 'pnpm' : 
+        framework.packageManager = packageJson.packageManager || (fs.existsSync(path.join(dir, 'pnpm-lock.yaml')) ? 'pnpm' :
                               fs.existsSync(path.join(dir, 'yarn.lock')) ? 'yarn' : 'npm');
         framework.suggestedDockerfile = 'nodejs';
       }
-      // Generic Node.js
       else {
         framework.name = 'nodejs';
         framework.version = process.version;
-        framework.packageManager = packageJson.packageManager || (fs.existsSync(path.join(dir, 'pnpm-lock.yaml')) ? 'pnpm' : 
+        framework.packageManager = packageJson.packageManager || (fs.existsSync(path.join(dir, 'pnpm-lock.yaml')) ? 'pnpm' :
                               fs.existsSync(path.join(dir, 'yarn.lock')) ? 'yarn' : 'npm');
         framework.suggestedDockerfile = 'nodejs';
       }
     }
-    // Python detection
-    else if (fs.existsSync(path.join(dir, 'requirements.txt')) || 
-             fs.existsSync(path.join(dir, 'pyproject.toml')) || 
+    else if (fs.existsSync(path.join(dir, 'requirements.txt')) ||
+             fs.existsSync(path.join(dir, 'pyproject.toml')) ||
              fs.existsSync(path.join(dir, 'setup.py'))) {
       framework.name = 'python';
       framework.packageManager = fs.existsSync(path.join(dir, 'poetry.lock')) ? 'poetry' : 'pip';
       framework.suggestedDockerfile = 'python';
     }
-    // Go detection
     else if (fs.existsSync(path.join(dir, 'go.mod'))) {
       framework.name = 'go';
       const goMod = fs.readFileSync(path.join(dir, 'go.mod'), 'utf8');
@@ -235,20 +229,17 @@ function detectFramework(dir) {
       framework.packageManager = 'go modules';
       framework.suggestedDockerfile = 'go';
     }
-    // Rust detection
     else if (fs.existsSync(path.join(dir, 'Cargo.toml'))) {
       framework.name = 'rust';
       framework.packageManager = 'cargo';
       framework.suggestedDockerfile = 'rust';
     }
-    // Java/Gradle detection
     else if (fs.existsSync(path.join(dir, 'build.gradle')) || fs.existsSync(path.join(dir, 'pom.xml'))) {
       framework.name = 'java';
       framework.packageManager = fs.existsSync(path.join(dir, 'build.gradle')) ? 'gradle' : 'maven';
       framework.suggestedDockerfile = 'java';
     }
-    // Static site detection
-    else if (fs.existsSync(path.join(dir, 'index.html')) && 
+    else if (fs.existsSync(path.join(dir, 'index.html')) &&
              !fs.existsSync(path.join(dir, 'package.json'))) {
       framework.name = 'static';
       framework.suggestedDockerfile = 'static';
@@ -272,12 +263,11 @@ function createTarStream(dir) {
       for (const item of items) {
         const fullPath = path.join(currentDir, item);
         const relPath = path.join(relativePath, item);
-        
-        // Skip excluded directories/files
+
         if (item === '.git' || item === 'node_modules' || item === '.env' || item.startsWith('.env.')) {
           continue;
         }
-        
+
         const stat = fs.statSync(fullPath);
         if (stat.isDirectory()) {
           addFiles(fullPath, relPath);
@@ -299,9 +289,9 @@ function createTarStream(dir) {
   });
 }
 
-console.log('🚀 CloudScale Worker Engine Initialized...');
+console.log('���� CloudScale Worker Engine Initialized...');
 console.log(
-  '📡 Listening for deployment jobs on queue: "deployment-queue"...\n'
+  '���� Listening for deployment jobs on queue: "deployment-queue"...\n'
 );
 
 const worker = new Worker(
@@ -314,11 +304,12 @@ const worker = new Worker(
       repoUrl,
       branch,
       assignedPort,
+      environmentVariables = {},
     } = job.data;
 
     console.log('==================================================');
     console.log(
-      '📦 [Job ID: ' +
+      '���� [Job ID: ' +
         job.id +
         '] Received deployment job for: "' +
         projectName +
@@ -330,19 +321,19 @@ const worker = new Worker(
     console.log('   • Target Host Port: ' + assignedPort);
     console.log('==================================================');
 
-    // Validate repository URL (security)
-    console.log('[0/4] 🔒 Validating repository URL...');
+    publishLog(deploymentId, `[0/4] Validating repository URL...`);
+    
     validateRepoUrl(repoUrl);
-    console.log('[0/4] ✅ Repository URL validated.');
+    
+    publishLog(deploymentId, `[0/4] Repository URL validated.`);
 
-    // Mark deployment as BUILDING
     await prisma.deployment.update({
       where: {
         id: deploymentId,
       },
       data: {
         status: 'BUILDING',
-        logs: `Deployment started for ${projectName}`,
+        logs: cleanLogs(`Deployment started for ${projectName}`),
       },
     });
 
@@ -352,16 +343,10 @@ const worker = new Worker(
     );
 
     try {
-      // ==================================================
-      // STEP 1: REAL GITHUB REPOSITORY CLONE
-      // ==================================================
+      publishLog(deploymentId, '[1/4] Cloning GitHub repository...');
 
-      console.log('[1/4] 📥 Cloning GitHub repository...');
-
-      // Remove an old clone if one exists
       await fs.remove(deploymentDir);
 
-      // Clone the requested branch
       await simpleGit().clone(
         repoUrl,
         deploymentDir,
@@ -372,36 +357,23 @@ const worker = new Worker(
         ]
       );
 
-      console.log(
-        '[1/4] ✅ Repository cloned successfully.'
-      );
+      publishLog(deploymentId, '[1/4] Repository cloned successfully.');
 
-      // Check for Dockerfile
-      console.log('[1.5/4] 🔍 Checking for Dockerfile...');
+      publishLog(deploymentId, '[1.5/4] Checking for Dockerfile...');
       checkDockerfileExists(deploymentDir);
-      console.log('[1.5/4] ✅ Dockerfile found.');
+      publishLog(deploymentId, '[1.5/4] Dockerfile found.');
 
-      // Detect framework (optional, for metadata)
-      console.log('[1.6/4] 🔍 Detecting framework...');
+      publishLog(deploymentId, '[1.6/4] Detecting framework...');
       const frameworkInfo = detectFramework(deploymentDir);
-      console.log('[1.6/4] ✅ Framework detection complete.');
+      publishLog(deploymentId, '[1.6/4] Framework detection complete.');
 
-      // Remove .git directory to reduce image size and avoid leaking git history
-      console.log('[1.7/4] 🧹 Removing .git directory...');
+      publishLog(deploymentId, '[1.7/4] Removing .git directory...');
       await fs.remove(path.join(deploymentDir, '.git'));
-      console.log('[1.7/4] ✅ .git directory removed.');
+      publishLog(deploymentId, '[1.7/4] .git directory removed.');
 
       await job.updateProgress(25);
 
-      // ==================================================
-      // STEP 2: DOCKER BUILD
-      // ==================================================
-
-      console.log(
-        '[2/4] 🐳 Building Docker image "cloudscale/' +
-          projectName +
-          ':latest"...'
-      );
+      publishLog(deploymentId, '[2/4] Building Docker image...');
 
       let buildLogs = '';
       const imageTag = `cloudscale/${projectName}:latest`;
@@ -417,26 +389,22 @@ const worker = new Worker(
           buildStream.on('data', (chunk) => {
             const chunkStr = chunk.toString();
             buildLogs += chunkStr;
-            console.log(`[Docker Build] ${chunkStr.trim()}`);
+            publishLog(deploymentId, `[Docker Build] ${chunkStr.trim()}`);
           });
 
           buildStream.on('end', resolve);
           buildStream.on('error', reject);
         });
 
-        console.log('[2/4] ✅ Docker image built successfully.');
+        publishLog(deploymentId, '[2/4] Docker image built successfully.');
       } catch (buildError) {
-        const errorMsg = `Docker build failed: ${buildError.message}\nBuild logs:\n${buildLogs}`;
+        const errorMsg = `Docker build failed: ${buildError.message}\nBuild logs:\n${cleanLogs(buildLogs)}`;
         throw new Error(errorMsg);
       }
 
       await job.updateProgress(50);
 
-      // ==================================================
-      // STEP 3: CREATE AND START CONTAINER
-      // ==================================================
-
-      console.log('[3/4] 📦 Creating and starting container...');
+      publishLog(deploymentId, '[3/4] Creating and starting container...');
 
       let container;
       const containerName = `app-${projectName}-${deploymentId.slice(0, 8)}`;
@@ -448,29 +416,43 @@ const worker = new Worker(
             PortBindings: {
               '3000/tcp': [{ HostPort: String(assignedPort) }],
             },
-            // Resource limits
-            Memory: 512 * 1024 * 1024,      // 512MB
-            MemorySwap: 512 * 1024 * 1024,  // No swap
+
+            Memory: 512 * 1024 * 1024,
+            MemorySwap: 512 * 1024 * 1024,
             CpuPeriod: 100000,
-            CpuQuota: 50000,                // 0.5 CPU
-            PidsLimit: 100,                 // Limit processes
+            CpuQuota: 50000,
+            PidsLimit: 100,
+
             Ulimits: [
-              { Name: 'nofile', Soft: 1024, Hard: 1024 },  // File descriptor limit
+              { Name: 'nofile', Soft: 1024, Hard: 1024 },
             ],
-            // Security hardening
+
             SecurityOpt: [
-              'no-new-privileges:true',     // Prevent privilege escalation
+              'no-new-privileges:true',
             ],
-            ReadonlyRootfs: true,           // Read-only root filesystem
-            CapDrop: ['ALL'],               // Drop all capabilities
+
+            ReadonlyRootfs: true,
+
+            Tmpfs: {
+              "/tmp": "rw,noexec,nosuid,size=64m",
+              "/var/cache/nginx": "rw,size=64m",
+              "/var/run": "rw,size=16m",
+              "/var/lib/nginx": "rw,size=32m",
+              "/var/cache/nginx/client_temp": "rw,size=16m",
+              "/var/cache/nginx/proxy_temp": "rw,size=16m",
+              "/var/cache/nginx/fastcgi_temp": "rw,size=16m",
+              "/var/cache/nginx/uwsgi_temp": "rw,size=16m",
+              "/var/cache/nginx/scgi_temp": "rw,size=16m"
+            },
+
+            CapDrop: ['ALL'],
+            CapAdd: ['CHOWN', 'DAC_OVERRIDE', 'SETGID', 'SETUID'],
             AutoRemove: false,
           },
           ExposedPorts: {
             '3000/tcp': {},
           },
-          // Run as non-root user (UID 1000)
-          User: '1000:1000',
-          Env: ['PORT=3000'],
+          Env: ['PORT=3000', ...Object.entries(environmentVariables).map(([k, v]) => `${k}=${v}`)],
           Labels: {
             'cloudscale.projectId': projectId,
             'cloudscale.deploymentId': deploymentId,
@@ -478,21 +460,20 @@ const worker = new Worker(
           name: containerName,
         });
 
-        console.log(`[3/4] ✅ Container created: ${containerName} (non-root, hardened)`);
+        publishLog(deploymentId, `[3/4] Container created: ${containerName} (hardened, readonly rootfs)`);
 
         await container.start();
-        console.log(`[3/4] ✅ Container started`);
+        publishLog(deploymentId, `[3/4] Container started`);
 
-        // Verify container is running
         await new Promise((resolve) => setTimeout(resolve, 2000));
         const inspect = await container.inspect();
-        
+
         if (!inspect.State.Running) {
           const logs = await container.logs({ stdout: true, stderr: true });
-          throw new Error(`Container failed to start. Logs: ${logs}`);
+          throw new Error(`Container failed to start. Logs: ${cleanLogs(logs)}`);
         }
 
-        console.log('[3/4] ✅ Container verified running');
+        publishLog(deploymentId, '[3/4] Container verified running');
       } catch (containerError) {
         if (container) {
           await container.remove({ force: true }).catch(() => {});
@@ -502,16 +483,7 @@ const worker = new Worker(
 
       await job.updateProgress(75);
 
-      // ==================================================
-      // STEP 4: DEPLOYMENT COMPLETE
-      // ==================================================
-
-      console.log(
-        '[4/4] ✅ Container successfully provisioned! ' +
-          'App live on port ' +
-          assignedPort +
-          '.'
-      );
+      publishLog(deploymentId, '[4/4] Container successfully provisioned! App live on port ' + assignedPort + '.');
 
       await prisma.deployment.update({
         where: {
@@ -525,17 +497,19 @@ const worker = new Worker(
           imageName: imageTag,
           liveUrl: `http://localhost:${assignedPort}`,
           logs:
-            `Deployment completed successfully. ` +
+            cleanLogs(`Deployment completed successfully. ` +
             `Repository cloned to ${deploymentDir}. ` +
             `Docker image built: ${imageTag}.\n` +
             `Container: ${containerName} (${container.id.slice(0, 12)})\n` +
             `Port mapping: ${assignedPort} -> 3000\n` +
             `Framework: ${frameworkInfo.name}${frameworkInfo.version ? ` v${frameworkInfo.version}` : ''}${frameworkInfo.packageManager ? ` (${frameworkInfo.packageManager})` : ''}\n` +
-            `Build logs:\n${buildLogs}`,
+            `Build logs:\n${cleanLogs(buildLogs)}`),
         },
       });
 
       await job.updateProgress(100);
+
+      publishLog(deploymentId, '[4/4] Deployment completed successfully!');
 
       return {
         status: 'DEPLOYED',
@@ -549,16 +523,17 @@ const worker = new Worker(
       };
     } catch (error) {
       console.error(
-        '❌ Deployment failed:',
+        '��� Deployment failed:',
         error.message
       );
 
-      // Cleanup deployment directory on failure
+      publishLog(deploymentId, `Deployment failed: ${error.message}`);
+
       try {
         await fs.remove(deploymentDir);
-        console.log(`🧹 Cleaned up deployment directory: ${deploymentDir}`);
+        console.log(`���� Cleaned up deployment directory: ${deploymentDir}`);
       } catch (cleanupError) {
-        console.error('⚠️ Failed to cleanup deployment directory:', cleanupError.message);
+        console.error('������ Failed to cleanup deployment directory:', cleanupError.message);
       }
 
       await prisma.deployment.update({
@@ -567,7 +542,7 @@ const worker = new Worker(
         },
         data: {
           status: 'FAILED',
-          logs: error.message,
+          logs: cleanLogs(error.message),
         },
       });
 
@@ -583,7 +558,7 @@ worker.on(
   'completed',
   (job, returnvalue) => {
     console.log(
-      '✅ [Job ID: ' +
+      '��� [Job ID: ' +
         job.id +
         '] COMPLETED SUCCESSFULLY!'
     );
@@ -592,6 +567,10 @@ worker.on(
       '   Result:',
       returnvalue
     );
+    
+    if (job.data?.deploymentId) {
+      publishLog(job.data.deploymentId, 'Job completed successfully');
+    }
   }
 );
 
@@ -599,10 +578,14 @@ worker.on(
   'failed',
   (job, err) => {
     console.error(
-      '❌ [Job ID: ' +
+      '��� [Job ID: ' +
         job?.id +
         '] FAILED: ' +
         err.message
     );
+    
+    if (job?.data?.deploymentId) {
+      publishLog(job.data.deploymentId, `Job failed: ${err.message}`);
+    }
   }
 );

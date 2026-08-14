@@ -1,0 +1,47 @@
+<svg width="32" height="32" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="brandGradient" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stopColor="#3b82f6" />
+      <stop offset="30%" stopColor="#2563eb" />
+      <stop offset="60%" stopColor="#06b6d4" />
+      <stop offset="100%" stopColor="#22d3ee" />
+    </linearGradient>
+    <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#ffffff" />
+      <stop offset="100%" stopColor="#e0f2fe" />
+    </linearGradient>
+  </defs>
+
+  <!-- Cloud base shape -->
+  <path
+    d="M32 52 C24.5 52 18 45.5 18 38 C18 31.5 24.5 25 32 25 C39.5 25 46 31.5 46 38 C46 44.5 39.5 51 32 51 Z"
+    fill="url(#brandGradient)"
+    opacity="0.95"
+  />
+
+  <!-- Three upward scaling layers -->
+  <g fill="url(#accentGradient)" opacity="0.9">
+    <rect x="18" y="34" width="28" height="2" rx="1" />
+    <rect x="20" y="30" width="24" height="2" rx="1" />
+    <rect x="22" y="26" width="20" height="2" rx="1" />
+    <rect x="24" y="22" width="16" height="2" rx="1" />
+    <rect x="26" y="18" width="12" height="2" rx="1" />
+  </g>
+
+  <!-- Subtle C curve -->
+  <path
+    d="M32 16 C24.5 16 18 22.5 18 30 C18 34.5 21.5 38.5 26 41 C30.5 43.5 36 44 41 42.5 C44.5 41.5 47.5 39 49 35.5 C50.5 32 50 27.5 48 24.5 C46 21.5 42.5 19.5 38.5 19.5 C34.5 19.5 30.8 21.5 28.5 24.5 C26.2 27.5 25.5 32 27 35.5"
+    stroke="url(#accentGradient)"
+    strokeWidth="1"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    fill="none"
+    opacity="0.4"
+  />
+
+  <!-- Upward arrow -->
+  <g transform="translate(32, 44)">
+    <path d="M0 -4 L-3 0 L3 0 Z" fill="url(#accentGradient)" opacity="0.7" />
+    <path d="M0 -1 L-2 2 L2 2 Z" fill="url(#accentGradient)" opacity="0.5" />
+  </g>
+</svg>

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Mail, Lock, AlertCircle, Loader2, User } from "lucide-react";
+import { CloudScaleLogo } from "@/components/ui/CloudScaleLogo";
 
 function RegisterContent() {
   const router = useRouter();
@@ -63,6 +64,7 @@ function RegisterContent() {
     <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a] px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
+          <CloudScaleLogo size="lg" showText textSize="xl" className="mx-auto mb-4" />
           <h1 className="text-3xl font-semibold text-white">Create Account</h1>
           <p className="mt-2 text-zinc-400">Join CloudScale to start deploying</p>
         </div>

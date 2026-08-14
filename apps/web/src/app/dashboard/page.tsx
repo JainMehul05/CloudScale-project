@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, FormEvent } from "react";
+import React, { useState, useEffect, FormEvent, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import {
@@ -26,20 +26,24 @@ import {
   Layers,
   TerminalSquare,
   LogOut,
+  TrendingUp,
 } from "lucide-react";
 
 import { DeploymentLogViewer } from "@/components/DeploymentLogViewer";
 import { signOut } from "next-auth/react";
+import { CloudScaleLogo } from "@/components/ui/CloudScaleLogo";
+import { cn, getStatusStyles } from "@/lib/design-system";
 
 // ---------------------------------------------------------------------------
-// Types & Interfaces (Preserved from existing logic)
+// Types & Interfaces
 // ---------------------------------------------------------------------------
 
 type DeploymentStatus =
   | "PENDING"
   | "BUILDING"
   | "DEPLOYED"
-  | "FAILED";
+  | "FAILED"
+  | "STOPPED";
 
 interface Project {
   id: string;
@@ -61,20 +65,188 @@ interface NewDeploymentPayload {
   framework: string;
 }
 
+interface StatCardProps {
+  label: string;
+  value: string | number;
+  icon: React.ReactNode;
+  trend?: { value: string; positive: boolean };
+  valueColor?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Utility Functions
+// ---------------------------------------------------------------------------
+
+function formatDate(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+// ---------------------------------------------------------------------------
+// Components
+// ---------------------------------------------------------------------------
+
+function StatCard({ label, value, icon, trend, valueColor }: StatCardProps) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: 0.1 }}
+      className={cn(
+        "bg-white/[0.02] border border-white/10 rounded-2xl p-5 backdrop-blur-sm",
+        "shadow-[0_4px_20px_-4px_rgba(0,0,0,0.5)]",
+        "flex items-center justify-between",
+        "hover:border-white/20 hover:bg-white/[0.04] transition-all duration-200"
+      )}
+    >
+      <div>
+        <p className="text-sm font-medium text-zinc-500 mb-1">{label}</p>
+        <h3 className={cn("text-2xl font-bold tracking-tight", valueColor || "text-white")}>
+          {value}
+        </h3>
+        {trend && (
+          <span className={cn("text-xs font-medium mt-1 flex items-center gap-1", trend.positive ? "text-emerald-400" : "text-red-400")}>
+            <TrendingUp className={cn("w-3 h-3", trend.positive ? "" : "rotate-180")} />
+            {trend.value}
+          </span>
+        )}
+      </div>
+      <div className="w-10 h-10 rounded-full bg-white/[0.04] flex items-center justify-center border border-white/5">
+        {icon}
+      </div>
+    </motion.div>
+  );
+}
+
+function ProjectCard({ project, onViewLogs }: { project: Project; onViewLogs: (id: string) => void }) {
+  const statusStyles = getStatusStyles(project.status.toLowerCase() as "deployed" | "building" | "pending" | "failed" | "stopped");
+  const statusLabel = project.status.charAt(0) + project.status.slice(1).toLowerCase();
+
+  return (
+    <Link
+      key={project.id}
+      href={`/dashboard/projects/${project.id}`}
+      className={cn(
+        "group flex flex-col bg-[#111111] border border-white/10 rounded-2xl overflow-hidden",
+        "transition-all duration-300",
+        "hover:border-white/20 hover:shadow-[0_8px_30px_-4px_rgba(59,130,246,0.1)]"
+      )}
+    >
+      <div className="p-5 border-b border-white/5">
+        <div className="flex justify-between items-start mb-3">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center">
+              <GitBranch className="w-4 h-4 text-zinc-300" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="font-semibold text-white truncate">{project.name}</h3>
+              <p className="text-xs text-zinc-500 truncate">{project.repository}</p>
+            </div>
+          </div>
+          <button className="text-zinc-600 hover:text-zinc-300 transition-colors p-1 rounded" aria-label="More options">
+            <MoreVertical className="w-4 h-4" />
+          </button>
+        </div>
+        
+        <div className="flex items-center gap-3 text-xs text-zinc-400 mt-4">
+          <span className="flex items-center gap-1.5 bg-white/[0.03] px-2 py-1 rounded-md border border-white/5">
+            <GitBranch className="w-3.5 h-3.5" />
+            {project.branch}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5" />
+            {formatDate(project.updatedAt)}
+          </span>
+        </div>
+      </div>
+
+      <div className="p-4 bg-black/40 flex items-center justify-between mt-auto">
+        <span className={cn(
+          "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border",
+          statusStyles.bg.replace("rgba(", "bg-").replace(")", ""),
+          statusStyles.text.replace("text-", ""),
+          statusStyles.border.replace("rgba(", "border-").replace(")", "")
+        )}>
+          <span className={cn("w-1.5 h-1.5 rounded-full", statusStyles.dot.replace("bg-", "bg-"))} />
+          {statusLabel}
+        </span>
+        
+        <div className="flex items-center gap-2">
+          {project.lastDeploymentId && (
+            <button
+              onClick={(e) => { e.preventDefault(); onViewLogs(project.lastDeploymentId!); }}
+              className="flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+            >
+              <TerminalSquare className="w-3.5 h-3.5" />
+              Logs
+            </button>
+          )}
+          {project.url ? (
+            <a
+              href={project.url}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+            >
+              Visit <Globe className="w-3.5 h-3.5" />
+            </a>
+          ) : (
+            <span className="text-xs font-mono text-zinc-600">{project.id.slice(0, 8)}</span>
+          )}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function EmptyState({ icon: Icon, title, description, actionLabel, onAction }: { 
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  actionLabel: string;
+  onAction: () => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex flex-col items-center justify-center h-64 rounded-2xl border border-dashed border-white/10 bg-white/[0.01]"
+    >
+      <Icon className="w-10 h-10 text-zinc-600 mb-4" />
+      <h3 className="text-lg font-medium text-white mb-1">{title}</h3>
+      <p className="text-sm text-zinc-500 mb-4 text-center px-4">{description}</p>
+      <button
+        onClick={onAction}
+        className="flex items-center gap-2 bg-white/10 hover:bg-white/15 border border-white/10 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+      >
+        {actionLabel}
+      </button>
+    </motion.div>
+  );
+}
+
+function SkeletonCard() {
+  return (
+    <div className="h-48 rounded-2xl bg-white/[0.02] border border-white/5 animate-pulse" />
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Main Dashboard Page
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
-  // --- State Management ---
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [userEmail, setUserEmail] = useState("");
-  
-  // Modal State
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
   const [formData, setFormData] = useState<NewDeploymentPayload>({
@@ -83,25 +255,40 @@ export default function DashboardPage() {
     branch: "main",
     framework: "Next.js"
   });
-
-  // Log Viewer State
   const [logViewerDeploymentId, setLogViewerDeploymentId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const fetchProjects = async () => {
+  const showToast = useCallback((message: string, type: "success" | "error") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
+  const fetchProjects = useCallback(async () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    
     try {
       setIsLoading(true);
-      const res = await fetch("/api/projects", { cache: "no-store" });
+      const res = await fetch("/api/projects", { 
+        cache: "no-store",
+        signal: abortControllerRef.current.signal 
+      });
       if (!res.ok) throw new Error("Failed to fetch projects");
       const data = await res.json();
       setProjects(data);
     } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") return;
       console.error("Failed to fetch projects:", error);
+      showToast("Failed to load projects", "error");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [showToast]);
 
-  const fetchUser = async () => {
+  const fetchUser = useCallback(async () => {
     try {
       const res = await fetch("/api/auth/session", { cache: "no-store" });
       if (res.ok) {
@@ -111,167 +298,81 @@ export default function DashboardPage() {
     } catch {
       // Ignore
     }
-  };
-
-  // Fetch real projects from backend
-  useEffect(() => {
-    const init = async () => {
-      fetchProjects();
-      fetchUser();
-      const interval = setInterval(() => {
-        fetchProjects();
-      }, 10000);
-      return () => clearInterval(interval);
-    };
-    init();
   }, []);
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    fetchProjects();
+    fetchUser();
+/* eslint-enable react-hooks/set-state-in-effect */
+    const interval = setInterval(fetchProjects, 10000);
+    return () => {
+      clearInterval(interval);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [fetchProjects, fetchUser]);
 
   const handleSignOut = async () => {
     await signOut({ callbackUrl: "/" });
   };
 
+  const handleCreateDeployment = async (e: FormEvent) => {
+    e.preventDefault();
+    setIsDeploying(true);
 
-const handleCreateDeployment = async (e: FormEvent) => {
-  e.preventDefault();
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: formData.name,
+          githubRepo: formData.repository,
+          branch: formData.branch,
+          framework: formData.framework,
+        }),
+      });
 
-  setIsDeploying(true);
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to create project");
+      }
 
-  try {
-    const res = await fetch("/api/projects", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name: formData.name,
-        githubRepo: formData.repository,
-        branch: formData.branch,
-        framework: formData.framework,
-      }),
-    });
-
-
-    if (!res.ok) {
-      throw new Error("Deployment failed");
+      await res.json();
+      await fetchProjects();
+      setFormData({ name: "", repository: "", branch: "main", framework: "Next.js" });
+      setIsDeployModalOpen(false);
+      showToast("Project created successfully", "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Failed to create project", "error");
+    } finally {
+      setIsDeploying(false);
     }
+  };
 
-
-    await res.json();
-
-    await fetchProjects();
-
-
-    setFormData({
-      name: "",
-      repository: "",
-      branch: "main",
-      framework: "Next.js",
-    });
-
-
-    setIsDeployModalOpen(false);
-
-
-  } catch (error) {
-
-    console.error(
-      "Deployment error:",
-      error
-    );
-
-  } finally {
-
-    setIsDeploying(false);
-
-  }
-};
-
-  // --- Derived State ---
+  // Derived State
   const filteredProjects = projects.filter(p => 
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     p.repository.toLowerCase().includes(searchQuery.toLowerCase())
   );
   
   const activeDeployments = projects.filter(
-    p =>
-      p.status === "PENDING" ||
-      p.status === "BUILDING"
+    p => p.status === "PENDING" || p.status === "BUILDING"
   ).length;
+  
   const completedProjects = projects.filter(
-    p =>
-      p.status === "DEPLOYED" ||
-      p.status === "FAILED"
+    p => p.status === "DEPLOYED" || p.status === "FAILED"
   );
   
-  
-  const successRate =
-    completedProjects.length > 0
-      ? Math.round(
-          (
-            completedProjects.filter(
-              p => p.status === "DEPLOYED"
-            ).length /
-            completedProjects.length
-          ) * 100
-        )
-      : 0;
-
-  // ---------------------------------------------------------------------------
-  // Render Helpers
-  // ---------------------------------------------------------------------------
-
-  const getStatusConfig = (status: DeploymentStatus) => {
-    switch (status) {
-      case "DEPLOYED":
-        return {
-          icon: <CheckCircle2 className="w-3.5 h-3.5" />,
-          text: "Deployed",
-          styles: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-          dot: "bg-emerald-400"
-        };
-        case "BUILDING":
-        return {
-          icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
-          text: "Building",
-          styles: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-          dot: "bg-amber-400 animate-pulse"
-        };
-      case "PENDING":
-        return {
-          icon: <Clock className="w-3.5 h-3.5" />,
-          text: "Pending",
-          styles: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-          dot: "bg-blue-400"
-        };
-      case "FAILED":
-        return {
-          icon: <XCircle className="w-3.5 h-3.5" />,
-          text: "Failed",
-          styles: "bg-red-500/10 text-red-400 border-red-500/20",
-          dot: "bg-red-400"
-        };
-    }
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
-    
-    if (diff < 60) return `${diff}s ago`;
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return `${Math.floor(diff / 86400)}d ago`;
-  };
+  const successRate = completedProjects.length > 0
+    ? Math.round((completedProjects.filter(p => p.status === "DEPLOYED").length / completedProjects.length) * 100)
+    : 0;
 
   return (
     <div className="flex h-screen w-full bg-[#0a0a0a] text-zinc-300 font-sans overflow-hidden selection:bg-blue-500/30">
       
-      {/* ----------------------------------------------------------------------
-          SIDEBAR
-      ---------------------------------------------------------------------- */}
-      
-      {/* Mobile Sidebar Overlay */}
+      {/* Sidebar Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
           <motion.div
@@ -285,51 +386,67 @@ const handleCreateDeployment = async (e: FormEvent) => {
       </AnimatePresence>
 
       <motion.aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 flex flex-col border-r border-white/10 bg-[#0a0a0a]/95 backdrop-blur-xl lg:static lg:flex transition-transform duration-300 ease-in-out ${
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 w-64 flex flex-col border-r border-white/10 bg-[#0a0a0a]/95 backdrop-blur-xl lg:static lg:flex",
+          "transition-transform duration-300 ease-in-out",
           isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-        }`}
+        )}
       >
         <div className="flex h-16 items-center px-6 border-b border-white/10">
-          <div className="flex items-center gap-3 text-white">
-            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-400 shadow-[0_0_15px_rgba(59,130,246,0.3)]">
-              <Rocket className="w-4 h-4 text-white" strokeWidth={2.5} />
-            </div>
-            <span className="font-semibold tracking-tight text-lg">CloudScale</span>
-          </div>
+          <CloudScaleLogo size="md" showText textSize="lg" className="text-white" />
         </div>
 
         <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-1">
           <p className="px-3 text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">
             Overview
           </p>
-          <a href="#" className="flex items-center gap-3 rounded-lg bg-white/[0.04] px-3 py-2 text-white font-medium border border-white/5">
+          <Link 
+            href="/dashboard" 
+            className="flex items-center gap-3 rounded-lg bg-white/[0.04] px-3 py-2 text-white font-medium border border-white/5"
+            aria-current="page"
+          >
             <LayoutDashboard className="w-4 h-4 text-blue-400" />
             Projects
-          </a>
-          <a href="#" className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-400 hover:bg-white/[0.02] hover:text-white transition-colors">
+          </Link>
+          <Link 
+            href="#deployments" 
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-400 hover:bg-white/[0.02] hover:text-white transition-colors"
+          >
             <Activity className="w-4 h-4" />
             Deployments
-          </a>
-          <a href="#" className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-400 hover:bg-white/[0.02] hover:text-white transition-colors">
+          </Link>
+          <Link 
+            href="#infrastructure" 
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-400 hover:bg-white/[0.02] hover:text-white transition-colors"
+          >
             <Server className="w-4 h-4" />
             Infrastructure
-          </a>
-          <a href="#" className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-400 hover:bg-white/[0.02] hover:text-white transition-colors">
+          </Link>
+          <Link 
+            href="#storage" 
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-400 hover:bg-white/[0.02] hover:text-white transition-colors"
+          >
             <Database className="w-4 h-4" />
             Storage
-          </a>
+          </Link>
           
           <p className="px-3 text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3 mt-8">
             Account
           </p>
-          <a href="#" className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-400 hover:bg-white/[0.02] hover:text-white transition-colors">
+          <Link 
+            href="#settings" 
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-400 hover:bg-white/[0.02] hover:text-white transition-colors"
+          >
             <Settings className="w-4 h-4" />
             Settings
-          </a>
-          <a href="#" className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-400 hover:bg-white/[0.02] hover:text-white transition-colors">
+          </Link>
+          <Link 
+            href="#docs" 
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-zinc-400 hover:bg-white/[0.02] hover:text-white transition-colors"
+          >
             <BookOpen className="w-4 h-4" />
             Documentation
-          </a>
+          </Link>
         </nav>
 
         <div className="p-4 border-t border-white/10">
@@ -337,8 +454,8 @@ const handleCreateDeployment = async (e: FormEvent) => {
             <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-violet-500 to-fuchsia-500 flex items-center justify-center text-xs text-white font-medium shadow-inner">
               {userEmail ? userEmail.charAt(0).toUpperCase() : "U"}
             </div>
-            <div className="flex flex-col">
-              <span className="text-sm font-medium text-white leading-tight">{userEmail || "Loading..."}</span>
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-medium text-white leading-tight truncate">{userEmail || "Loading..."}</span>
               <span className="text-xs text-zinc-500">Free Tier</span>
             </div>
           </div>
@@ -352,25 +469,21 @@ const handleCreateDeployment = async (e: FormEvent) => {
         </div>
       </motion.aside>
 
-      {/* ----------------------------------------------------------------------
-          MAIN CONTENT AREA
-      ---------------------------------------------------------------------- */}
+      {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-        
-        {/* Ambient Top Glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[300px] bg-blue-500/10 blur-[120px] rounded-full pointer-events-none" />
 
-        {/* Topbar */}
         <header className="flex h-16 shrink-0 items-center justify-between px-4 lg:px-8 border-b border-white/10 bg-[#0a0a0a]/80 backdrop-blur-md z-10">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsSidebarOpen(true)}
-              className="lg:hidden text-zinc-400 hover:text-white"
+              className="lg:hidden text-zinc-400 hover:text-white p-2 rounded-lg hover:bg-white/5"
+              aria-label="Open sidebar"
             >
               <Menu className="w-5 h-5" />
             </button>
-            <div className="flex items-center text-sm">
-              <span className="text-zinc-400 hover:text-white cursor-pointer transition-colors">{userEmail || "user"}</span>
+            <div className="hidden sm:flex items-center text-sm">
+              <span className="text-zinc-400">{userEmail || "user"}</span>
               <span className="mx-2 text-zinc-700">/</span>
               <span className="font-medium text-white">Projects</span>
             </div>
@@ -385,15 +498,18 @@ const handleCreateDeployment = async (e: FormEvent) => {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-64 bg-white/[0.03] border border-white/10 rounded-lg pl-9 pr-4 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+                aria-label="Search projects"
               />
             </div>
-            <button 
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               onClick={() => setIsDeployModalOpen(true)}
-              className="flex items-center gap-2 bg-white text-black hover:bg-zinc-200 px-4 py-1.5 rounded-lg text-sm font-semibold transition-all active:scale-95"
+              className="flex items-center gap-2 bg-gradient-to-b from-blue-500 to-cyan-600 hover:from-blue-400 hover:to-cyan-500 text-white px-4 py-1.5 rounded-lg text-sm font-semibold transition-all shadow-[0_0_20px_-5px_rgba(59,130,246,0.4)]"
             >
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">New Project</span>
-            </button>
+            </motion.button>
             <button
               onClick={handleSignOut}
               className="hidden md:flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
@@ -404,145 +520,102 @@ const handleCreateDeployment = async (e: FormEvent) => {
           </div>
         </header>
 
-        {/* Main Dashboard Content */}
         <main className="flex-1 overflow-y-auto p-4 lg:p-8 z-10">
           <div className="max-w-6xl mx-auto space-y-8">
-            
             {/* Stats Overview */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {[
-                { label: "Total Projects", value: projects.length, icon: Layers },
-                { label: "Active Deployments", value: activeDeployments, icon: Activity, valueColor: "text-amber-400" },
-                { label: "Success Rate", value: `${successRate}%`, icon: Terminal, valueColor: successRate > 90 ? "text-emerald-400" : "text-white" }
-              ].map((stat, i) => (
-                <div key={i} className="bg-white/[0.02] border border-white/10 rounded-xl p-5 backdrop-blur-sm shadow-[0_4px_20px_-4px_rgba(0,0,0,0.5)] flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-zinc-500 mb-1">{stat.label}</p>
-                    <h3 className={`text-2xl font-bold tracking-tight ${stat.valueColor || "text-white"}`}>
-                      {stat.value}
-                    </h3>
-                  </div>
-                  <div className="w-10 h-10 rounded-full bg-white/[0.04] flex items-center justify-center border border-white/5">
-                    <stat.icon className="w-4 h-4 text-zinc-400" />
-                  </div>
-                </div>
-              ))}
-            </div>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+              className="grid grid-cols-1 md:grid-cols-3 gap-4"
+            >
+              <StatCard
+                label="Total Projects"
+                value={projects.length}
+                icon={<Layers className="w-4 h-4 text-zinc-400" />}
+                trend={projects.length > 0 ? { value: "+1 this week", positive: true } : undefined}
+              />
+              <StatCard
+                label="Active Deployments"
+                value={activeDeployments}
+                icon={<Activity className="w-4 h-4 text-amber-400" />}
+                valueColor="text-amber-400"
+              />
+              <StatCard
+                label="Success Rate"
+                value={`${successRate}%`}
+                icon={<Terminal className="w-4 h-4 text-emerald-400" />}
+                valueColor={successRate > 90 ? "text-emerald-400" : "text-white"}
+                trend={completedProjects.length > 0 ? { value: "+2%", positive: true } : undefined}
+              />
+            </motion.div>
 
             {/* Projects Grid */}
-            <div className="space-y-4">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.1 }}
+              className="space-y-4"
+            >
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-semibold tracking-tight text-white">Your Projects</h2>
+                {filteredProjects.length > 0 && (
+                  <span className="text-sm text-zinc-500">{filteredProjects.length} project{filteredProjects.length !== 1 ? "s" : ""}</span>
+                )}
               </div>
 
               {isLoading ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-48 rounded-xl bg-white/[0.02] border border-white/5 animate-pulse" />
-                  ))}
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" aria-busy="true" aria-label="Loading projects">
+                  {[1, 2, 3].map((i) => <SkeletonCard key={i} />)}
                 </div>
               ) : filteredProjects.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-64 rounded-xl border border-dashed border-white/10 bg-white/[0.01]">
-                  <Rocket className="w-10 h-10 text-zinc-600 mb-4" />
-                  <h3 className="text-lg font-medium text-white mb-1">No projects found</h3>
-                  <p className="text-sm text-zinc-500 mb-4">Get started by deploying a new repository.</p>
-                  <button 
-                    onClick={() => setIsDeployModalOpen(true)}
-                    className="flex items-center gap-2 bg-white/10 hover:bg-white/15 border border-white/10 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    Deploy Project
-                  </button>
-                </div>
+                <EmptyState
+                  icon={Rocket}
+                  title="No projects found"
+                  description="Get started by deploying a new repository from GitHub."
+                  actionLabel="Deploy Project"
+                  onAction={() => setIsDeployModalOpen(true)}
+                />
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {filteredProjects.map((project) => {
-                    const statusConfig = getStatusConfig(project.status);
-                    
-                    return (
-                      <Link
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" role="list" aria-label="Projects">
+{filteredProjects.map((project) => (
+                      <ProjectCard
                         key={project.id}
-                        href={`/dashboard/projects/${project.id}`}
-                        className="group flex flex-col bg-[#111111] border border-white/10 hover:border-white/20 rounded-xl overflow-hidden transition-all duration-300 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.5)] hover:shadow-[0_8px_30px_-4px_rgba(59,130,246,0.1)]"
-                      >
-                        {/* Card Header */}
-                        <div className="p-5 border-b border-white/5">
-                          <div className="flex justify-between items-start mb-3">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center">
-                                <GitBranch className="w-4 h-4 text-zinc-300" />
-                              </div>
-                              <div>
-                                <h3 className="font-semibold text-white truncate max-w-[180px]">
-                                  {project.name}
-                                </h3>
-                                <p className="text-xs text-zinc-500 truncate max-w-[180px]">
-                                  {project.repository}
-                                </p>
-                              </div>
-                            </div>
-                            <button className="text-zinc-600 hover:text-zinc-300 transition-colors">
-                              <MoreVertical className="w-4 h-4" />
-                            </button>
-                          </div>
-                          
-                          <div className="flex items-center gap-3 text-xs text-zinc-400 mt-4">
-                            <div className="flex items-center gap-1.5 bg-white/[0.03] px-2 py-1 rounded-md border border-white/5">
-                              <GitBranch className="w-3.5 h-3.5" />
-                              {project.branch}
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <Clock className="w-3.5 h-3.5" />
-                              {formatDate(project.updatedAt)}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Card Footer */}
-                        <div className="p-4 bg-black/40 flex items-center justify-between mt-auto">
-                          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border ${statusConfig.styles}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dot}`} />
-                            {statusConfig.text}
-                          </div>
-                          
-                          <div className="flex items-center gap-2">
-                            {project.lastDeploymentId && (
-                              <button
-                                onClick={() => setLogViewerDeploymentId(project.lastDeploymentId!)}
-                                className="flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
-                              >
-                                <TerminalSquare className="w-3.5 h-3.5" />
-                                Logs
-                              </button>
-                            )}
-                            {project.url ? (
-                              <a 
-                                href={project.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
-                              >
-                                Visit <Globe className="w-3.5 h-3.5" />
-                              </a>
-                            ) : (
-                              <span className="text-xs font-mono text-zinc-600">
-                                {project.id.split('_')[1]}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </Link>
-                    );
-                  })}
+                        project={project}
+                        onViewLogs={setLogViewerDeploymentId}
+                      />
+                    ))}
                 </div>
               )}
-            </div>
+            </motion.div>
           </div>
         </main>
+
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={cn(
+              "fixed bottom-4 right-4 z-50 flex items-center justify-between px-4 py-3 rounded-xl border",
+              "animate-in fade-in duration-200",
+              toast.type === "success"
+                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                : "bg-red-500/10 border-red-500/20 text-red-400"
+            )}
+          >
+            <span className="flex items-center gap-2 text-sm">
+              {toast.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+              {toast.message}
+            </span>
+            <button onClick={() => setToast(null)} className="ml-4 p-1 hover:bg-white/10 rounded">
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
       </div>
 
-      {/* ----------------------------------------------------------------------
-          NEW DEPLOYMENT MODAL (Preserving POST logic entry point)
-      ---------------------------------------------------------------------- */}
+      {/* New Deployment Modal */}
       <AnimatePresence>
         {isDeployModalOpen && (
           <>
@@ -565,9 +638,10 @@ const handleCreateDeployment = async (e: FormEvent) => {
                     <h3 className="text-lg font-semibold text-white">Import Git Repository</h3>
                     <p className="text-sm text-zinc-400">Deploy a new project from GitHub.</p>
                   </div>
-                  <button 
+                  <button
                     onClick={() => setIsDeployModalOpen(false)}
                     className="p-1 rounded-md text-zinc-500 hover:text-white hover:bg-white/10 transition-colors"
+                    aria-label="Close modal"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -641,7 +715,9 @@ const handleCreateDeployment = async (e: FormEvent) => {
                     >
                       Cancel
                     </button>
-                    <button
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
                       type="submit"
                       disabled={isDeploying || !formData.repository || !formData.name}
                       className="flex items-center gap-2 bg-gradient-to-b from-blue-500 to-cyan-600 hover:from-blue-400 hover:to-cyan-500 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-[0_0_20px_-5px_rgba(59,130,246,0.4)] disabled:opacity-50 disabled:cursor-not-allowed"
@@ -657,7 +733,7 @@ const handleCreateDeployment = async (e: FormEvent) => {
                           <Rocket className="w-4 h-4" />
                         </>
                       )}
-                    </button>
+                    </motion.button>
                   </div>
                 </form>
               </div>
@@ -666,9 +742,7 @@ const handleCreateDeployment = async (e: FormEvent) => {
         )}
       </AnimatePresence>
 
-      {/* ----------------------------------------------------------------------
-          LOG VIEWER MODAL
-      ---------------------------------------------------------------------- */}
+      {/* Log Viewer Modal */}
       <AnimatePresence>
         {logViewerDeploymentId && (
           <>
@@ -693,7 +767,6 @@ const handleCreateDeployment = async (e: FormEvent) => {
           </>
         )}
       </AnimatePresence>
-
     </div>
   );
 }

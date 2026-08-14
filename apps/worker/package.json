@@ -1,4 +1,12 @@
 {
+  "name": "worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "node worker.js",
+    "start": "node worker.js",
+    "test": "vitest run"
+  },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@prisma/client": "^6.19.3",
@@ -17,8 +25,5 @@
     "prisma": "^6.19.3",
     "vitest": "^2.1.0",
     "@vitest/coverage-v8": "^2.1.0"
-  },
-  "scripts": {
-    "test": "vitest run"
   }
 }
