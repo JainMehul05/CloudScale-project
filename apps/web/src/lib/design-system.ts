@@ -1,22 +1,25 @@
 export const colors = {
   background: {
-    primary: "#0a0a0a",
-    secondary: "#111111",
-    tertiary: "#1a1a1a",
-    elevated: "#1e1e1e",
+    primary: "#030303",
+    secondary: "#0a0a0a",
+    tertiary: "#111111",
+    elevated: "#1a1a1a",
+    card: "#0d0d0d",
   },
   border: {
-    subtle: "rgba(255,255,255,0.05)",
-    default: "rgba(255,255,255,0.1)",
-    strong: "rgba(255,255,255,0.2)",
+    subtle: "rgba(255,255,255,0.04)",
+    default: "rgba(255,255,255,0.08)",
+    strong: "rgba(255,255,255,0.15)",
     focus: "#3b82f6",
+    accent: "rgba(59,130,246,0.3)",
   },
   text: {
     primary: "#fafafa",
     secondary: "#a1a1aa",
     muted: "#71717a",
-    inverse: "#0a0a0a",
+    inverse: "#030303",
     link: "#60a5fa",
+    accent: "#22d3ee",
   },
   accent: {
     blue: {
@@ -57,52 +60,55 @@ export const colors = {
       600: "#7c3aed",
     },
   },
+  gradients: {
+    primary: "linear-gradient(135deg, #3b82f6 0%, #06b6d4 50%, #22d3ee 100%)",
+    primaryHover: "linear-gradient(135deg, #2563eb 0%, #0891b2 50%, #06b6d4 100%)",
+    subtle: "linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(6,182,212,0.04) 100%)",
+    card: "linear-gradient(135deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.01) 100%)",
+    glow: "radial-gradient(ellipse at center, rgba(59,130,246,0.12) 0%, transparent 70%)",
+    glowStrong: "radial-gradient(ellipse at center, rgba(59,130,246,0.2) 0%, transparent 60%)",
+    mesh: "linear-gradient(135deg, rgba(59,130,246,0.06) 0%, rgba(6,182,212,0.03) 50%, rgba(34,211,238,0.02) 100%)",
+  },
+  shadows: {
+    sm: "0 1px 2px 0 rgba(0,0,0,0.4)",
+    md: "0 4px 8px -2px rgba(0,0,0,0.5), 0 2px 4px -2px rgba(0,0,0,0.3)",
+    lg: "0 12px 16px -4px rgba(0,0,0,0.5), 0 4px 6px -4px rgba(0,0,0,0.4)",
+    xl: "0 24px 32px -8px rgba(0,0,0,0.6), 0 8px 12px -6px rgba(0,0,0,0.5)",
+    glow: "0 0 24px -6px rgba(59,130,246,0.35)",
+    glowStrong: "0 0 48px -12px rgba(59,130,246,0.45)",
+    inner: "inset 0 1px 0 0 rgba(255,255,255,0.05)",
+  },
   status: {
     deployed: {
-      bg: "rgba(16,185,129,0.1)",
+      bg: "rgba(16,185,129,0.12)",
       text: "#34d399",
-      border: "rgba(16,185,129,0.2)",
+      border: "rgba(16,185,129,0.25)",
       dot: "#34d399",
     },
     building: {
-      bg: "rgba(245,158,11,0.1)",
+      bg: "rgba(245,158,11,0.12)",
       text: "#fbbf24",
-      border: "rgba(245,158,11,0.2)",
+      border: "rgba(245,158,11,0.25)",
       dot: "#fbbf24",
     },
     pending: {
-      bg: "rgba(59,130,246,0.1)",
+      bg: "rgba(59,130,246,0.12)",
       text: "#60a5fa",
-      border: "rgba(59,130,246,0.2)",
+      border: "rgba(59,130,246,0.25)",
       dot: "#60a5fa",
     },
     failed: {
-      bg: "rgba(239,68,68,0.1)",
+      bg: "rgba(239,68,68,0.12)",
       text: "#f87171",
-      border: "rgba(239,68,68,0.2)",
+      border: "rgba(239,68,68,0.25)",
       dot: "#f87171",
     },
     stopped: {
-      bg: "rgba(107,114,128,0.1)",
+      bg: "rgba(107,114,128,0.12)",
       text: "#9ca3af",
-      border: "rgba(107,114,128,0.2)",
+      border: "rgba(107,114,128,0.25)",
       dot: "#9ca3af",
     },
-  },
-  gradients: {
-    primary: "linear-gradient(180deg, #3b82f6 0%, #06b6d4 100%)",
-    primaryHover: "linear-gradient(180deg, #2563eb 0%, #0891b2 100%)",
-    subtle: "linear-gradient(180deg, rgba(59,130,246,0.1) 0%, rgba(6,182,212,0.05) 100%)",
-    card: "linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.01) 100%)",
-    glow: "radial-gradient(ellipse at center, rgba(59,130,246,0.15) 0%, transparent 70%)",
-  },
-  shadows: {
-    sm: "0 1px 2px 0 rgba(0,0,0,0.3)",
-    md: "0 4px 6px -1px rgba(0,0,0,0.4), 0 2px 4px -2px rgba(0,0,0,0.3)",
-    lg: "0 10px 15px -3px rgba(0,0,0,0.4), 0 4px 6px -4px rgba(0,0,0,0.3)",
-    xl: "0 20px 25px -5px rgba(0,0,0,0.5), 0 8px 10px -6px rgba(0,0,0,0.4)",
-    glow: "0 0 20px -5px rgba(59,130,246,0.4)",
-    glowStrong: "0 0 40px -10px rgba(59,130,246,0.5)",
   },
 };
 
@@ -129,6 +135,7 @@ export const borderRadius = {
   lg: "0.5rem",
   xl: "0.75rem",
   "2xl": "1rem",
+  "3xl": "1.5rem",
   full: "9999px",
 };
 
@@ -171,7 +178,7 @@ export const typography = {
 };
 
 export const transitions = {
-  fast: "150ms ease",
+  fast: "120ms ease",
   normal: "200ms ease",
   slow: "300ms ease",
   spring: "400ms cubic-bezier(0.16, 1, 0.3, 1)",
@@ -199,67 +206,84 @@ export const zIndex = {
 
 export const componentStyles = {
   card: {
-    base: "bg-white/[0.02] border border-white/10 rounded-2xl backdrop-blur-sm",
-    hover: "hover:border-white/20 hover:bg-white/[0.04] transition-all duration-200",
-    elevated: "shadow-[0_4px_20px_-4px_rgba(0,0,0,0.5)]",
+    base: "bg-[#0d0d0d] border border-white/[0.08] rounded-2xl backdrop-blur-sm",
+    hover: "hover:border-white/[0.15] hover:bg-white/[0.02] transition-all duration-200",
+    elevated: "shadow-[0_12px_16px_-4px_rgba(0,0,0,0.5)]",
+    interactive: "bg-[#0d0d0d] border border-white/[0.08] rounded-2xl backdrop-blur-sm hover:border-white/[0.15] hover:bg-white/[0.02] transition-all duration-200 cursor-pointer",
   },
   button: {
     primary: `
       inline-flex items-center justify-center gap-2
       bg-gradient-to-b from-blue-500 to-cyan-600
       hover:from-blue-400 hover:to-cyan-500
-      text-white px-4 py-2 rounded-lg
+      text-white px-5 py-2.5 rounded-xl
       text-sm font-semibold
       transition-all duration-200
-      shadow-[0_0_20px_-5px_rgba(59,130,246,0.4)]
+      shadow-[0_0_24px_-6px_rgba(59,130,246,0.4)]
       disabled:opacity-50 disabled:cursor-not-allowed
       active:scale-[0.98]
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#030303]
     `,
     secondary: `
       inline-flex items-center justify-center gap-2
-      bg-white/[0.02] border border-white/10
-      hover:bg-white/[0.06] hover:border-white/20
-      text-zinc-200 px-4 py-2 rounded-lg
+      bg-white/[0.02] border border-white/[0.08]
+      hover:bg-white/[0.05] hover:border-white/[0.15]
+      text-zinc-100 px-5 py-2.5 rounded-xl
       text-sm font-medium
       transition-all duration-200
       backdrop-blur-sm
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#030303]
     `,
     ghost: `
       inline-flex items-center justify-center gap-2
       text-zinc-400 hover:text-white
-      px-3 py-1.5 rounded-md
+      px-4 py-2 rounded-lg
       text-sm font-medium
       transition-colors duration-200
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#030303]
     `,
     danger: `
       inline-flex items-center justify-center gap-2
-      bg-red-500/20 border border-red-500/30
-      hover:bg-red-500/30 hover:border-red-500/50
+      bg-red-500/15 border border-red-500/25
+      hover:bg-red-500/25 hover:border-red-500/40
       text-red-400 hover:text-red-300
-      px-4 py-2 rounded-lg
+      px-5 py-2.5 rounded-xl
       text-sm font-semibold
       transition-all duration-200
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#030303]
+    `,
+    icon: `
+      inline-flex items-center justify-center
+      bg-white/[0.02] border border-white/[0.08]
+      hover:bg-white/[0.05] hover:border-white/[0.15]
+      text-zinc-400 hover:text-white
+      p-2 rounded-xl
+      transition-all duration-200
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#030303]
     `,
   },
   input: {
     base: `
-      w-full bg-[#0a0a0a] border border-white/10
-      rounded-lg px-3 py-2.5 text-sm text-white
+      w-full bg-[#030303] border border-white/[0.08]
+      rounded-xl px-4 py-3 text-sm text-white
       placeholder-zinc-600
       focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
       transition-all duration-200
+      backdrop-blur-sm
     `,
-    error: "border-red-500 focus:ring-red-500/50 focus:border-red-500",
+    error: "border-red-500/50 focus:ring-red-500/50 focus:border-red-500",
+    disabled: "opacity-50 cursor-not-allowed",
   },
   badge: {
     base: `
       inline-flex items-center gap-1.5
       px-2.5 py-1 rounded-full text-[11px] font-medium border
     `,
+    dot: "w-1.5 h-1.5 rounded-full",
   },
   modal: {
     overlay: `
-      fixed inset-0 z-50 bg-black/60 backdrop-blur-sm
+      fixed inset-0 z-50 bg-black/70 backdrop-blur-sm
       animate-in fade-in duration-200
     `,
     content: `
@@ -267,6 +291,12 @@ export const componentStyles = {
       animate-in zoom-in-95 fade-in duration-200
     `,
   },
+  scrollbar: `
+    &::-webkit-scrollbar { width: 8px; height: 8px; }
+    &::-webkit-scrollbar-track { background: transparent; }
+    &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+    &::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+  `,
 };
 
 export function getStatusStyles(status: keyof typeof colors.status) {

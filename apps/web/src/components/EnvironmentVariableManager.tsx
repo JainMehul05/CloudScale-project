@@ -3,7 +3,7 @@
 import React, { useState, useEffect, FormEvent, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, X, Key, Eye, EyeOff, Loader2, Check, AlertCircle, Trash2, Copy, CheckCircle2, Shield } from "lucide-react";
-import { cn } from "@/lib/design-system";
+import { cn, componentStyles } from "@/lib/design-system";
 
 interface EnvVar {
   id: string;
@@ -196,7 +196,7 @@ export function EnvironmentVariableManager({
   };
 
   return (
-    <div className={cn("bg-white/[0.02] border border-white/10 rounded-2xl overflow-hidden", "shadow-[0_4px_20px_-4px_rgba(0,0,0,0.5)]")}>
+    <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "overflow-hidden")}>
       <div className="p-4 border-b border-white/10 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500/20 to-violet-500/20 flex items-center justify-center border border-white/10">
@@ -211,7 +211,7 @@ export function EnvironmentVariableManager({
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={() => { setShowAddForm(true); setErrors({}); setNewKey(""); setNewValue(""); }}
-          className="flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5"
+          className={cn("flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5")}
         >
           <Plus className="w-4 h-4" />
           Add Variable
@@ -300,7 +300,7 @@ export function EnvironmentVariableManager({
                         onChange={(e) => setEditValue(e.target.value)}
                         placeholder="Enter new value"
                         className={cn(
-                          "w-full bg-[#0a0a0a] border rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600",
+                          "w-full bg-[#030303] border rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600",
                           "focus:outline-none focus:ring-2 focus:ring-blue-500/50 pr-10"
                         )}
                         autoFocus
@@ -317,7 +317,7 @@ export function EnvironmentVariableManager({
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       onClick={() => handleEdit(envVar.id)}
-                      className="flex items-center gap-1.5 bg-gradient-to-b from-blue-500 to-cyan-600 hover:from-blue-400 hover:to-cyan-500 text-white px-3 py-2 rounded-lg text-sm font-medium transition-all"
+                      className={cn("flex items-center gap-1.5", componentStyles.button.primary)}
                     >
                       <Check className="w-3.5 h-3.5" />
                       Save
@@ -387,7 +387,7 @@ export function EnvironmentVariableManager({
                     onChange={(e) => setNewKey(e.target.value)}
                     placeholder="DATABASE_URL"
                     className={cn(
-                      "w-full bg-[#0a0a0a] border rounded-lg pl-9 pr-4 py-2.5 text-sm text-white placeholder-zinc-600",
+                      "w-full bg-[#030303] border rounded-lg pl-9 pr-4 py-2.5 text-sm text-white placeholder-zinc-600",
                       "focus:outline-none focus:ring-2 focus:ring-blue-500/50",
                       errors.key ? "border-red-500" : "border-white/10"
                     )}
@@ -406,7 +406,7 @@ export function EnvironmentVariableManager({
                     onChange={(e) => setNewValue(e.target.value)}
                     placeholder="Enter secret value"
                     className={cn(
-                      "w-full bg-[#0a0a0a] border rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-600",
+                      "w-full bg-[#030303] border rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-600",
                       "focus:outline-none focus:ring-2 focus:ring-blue-500/50 pr-12",
                       errors.value ? "border-red-500" : "border-white/10"
                     )}
@@ -438,7 +438,11 @@ export function EnvironmentVariableManager({
                   whileTap={{ scale: 0.98 }}
                   type="submit"
                   disabled={isAdding}
-                  className="flex items-center gap-1.5 bg-gradient-to-b from-blue-500 to-cyan-600 hover:from-blue-400 hover:to-cyan-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+                  className={cn(
+                    "flex items-center gap-1.5",
+                    componentStyles.button.primary,
+                    "disabled:opacity-50"
+                  )}
                 >
                   {isAdding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                   {isAdding ? "Adding..." : "Add Variable"}

@@ -20,20 +20,50 @@ model Project {
   createdAt   DateTime     @default(now())
 }
 
+enum DeploymentStatus {
+  QUEUED
+  VALIDATING
+  CLONING
+  DETECTING
+  BUILDING
+  STARTING
+  HEALTH_CHECK
+  RUNNING
+  FAILED
+  STOPPED
+}
+
 model Deployment {
   id            String   @id @default(uuid())
   projectId     String
   project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  status        String   @default("PENDING")
+  status        DeploymentStatus @default(QUEUED)
   logs          String?  @db.Text
   aiDiagnosis   Json?
   createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  startedAt     DateTime?
+  completedAt   DateTime?
+  failedAt      DateTime?
 
-  containerId   String?
-  containerName String?
-  containerPort Int?
-  imageName     String?
-  liveUrl       String?
+  containerId     String?
+  containerName   String?
+  containerPort   Int?
+  imageName       String?
+  liveUrl         String?
+  deploymentUrl   String?
+  deploymentLogs  DeploymentLog[]
+}
+
+model DeploymentLog {
+  id            String   @id @default(uuid())
+  deploymentId  String
+  deployment    Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  stage         String
+  message       String   @db.Text
+  timestamp     DateTime @default(now())
+
+  @@index([deploymentId, timestamp])
 }
 
 model EnvironmentVariable {

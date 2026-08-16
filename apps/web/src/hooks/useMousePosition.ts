@@ -16,7 +16,7 @@ export function useMousePosition(): MousePosition {
     normalizedX: 0,
     normalizedY: 0,
   });
-  const rafRef = useRef<number>();
+  const rafRef = useRef<number | undefined>(undefined);
   const targetRef = useRef<MousePosition>({ x: 0, y: 0, normalizedX: 0, normalizedY: 0 });
   const currentRef = useRef<MousePosition>({ x: 0, y: 0, normalizedX: 0, normalizedY: 0 });
 
@@ -59,6 +59,7 @@ export function useReducedMotion(): boolean {
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setReduced(mediaQuery.matches);
     const handler = (e: MediaQueryListEvent) => setReduced(e.matches);
     mediaQuery.addEventListener("change", handler);

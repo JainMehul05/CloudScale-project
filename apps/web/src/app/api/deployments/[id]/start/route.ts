@@ -33,7 +33,14 @@ export async function POST(
       return NextResponse.json({ error: "Deployment not found or access denied" }, { status: 404 });
     }
 
-    // Create a new deployment for the restart
+    if (deployment.status !== "STOPPED") {
+      return NextResponse.json(
+        { error: "Deployment is not in STOPPED state" },
+        { status: 400 }
+      );
+    }
+
+    // Create a new deployment for the start
     const newDeployment = await prisma.deployment.create({
       data: {
         projectId: deployment.projectId,
@@ -70,13 +77,13 @@ export async function POST(
 
     return NextResponse.json({ 
       success: true, 
-      message: "Deployment restart queued",
+      message: "Deployment start queued",
       newDeploymentId: newDeployment.id,
     });
   } catch (error: unknown) {
-    console.error("Error restarting deployment:", error);
+    console.error("Error starting deployment:", error);
     return NextResponse.json(
-      { error: "Failed to restart deployment" },
+      { error: "Failed to start deployment" },
       { status: 500 }
     );
   }

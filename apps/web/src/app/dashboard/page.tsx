@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, FormEvent, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   LayoutDashboard,
@@ -23,25 +24,30 @@ import {
   Search,
   Server,
   Database,
-  Layers,
   TerminalSquare,
   LogOut,
   TrendingUp,
+  Layers as LayersIcon,
+  GitBranch as GitBranchIcon,
 } from "lucide-react";
 
 import { DeploymentLogViewer } from "@/components/DeploymentLogViewer";
 import { signOut } from "next-auth/react";
 import { CloudScaleLogo } from "@/components/ui/CloudScaleLogo";
-import { cn, getStatusStyles } from "@/lib/design-system";
+import { cn, getStatusStyles, componentStyles } from "@/lib/design-system";
 
 // ---------------------------------------------------------------------------
 // Types & Interfaces
 // ---------------------------------------------------------------------------
 
 type DeploymentStatus =
-  | "PENDING"
+  | "QUEUED"
+  | "VALIDATING"
+  | "CLONING"
+  | "DETECTING"
   | "BUILDING"
-  | "DEPLOYED"
+  | "STARTING"
+  | "RUNNING"
   | "FAILED"
   | "STOPPED";
 
@@ -98,10 +104,10 @@ function StatCard({ label, value, icon, trend, valueColor }: StatCardProps) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: 0.1 }}
       className={cn(
-        "bg-white/[0.02] border border-white/10 rounded-2xl p-5 backdrop-blur-sm",
-        "shadow-[0_4px_20px_-4px_rgba(0,0,0,0.5)]",
-        "flex items-center justify-between",
-        "hover:border-white/20 hover:bg-white/[0.04] transition-all duration-200"
+        componentStyles.card.base,
+        componentStyles.card.hover,
+        componentStyles.card.elevated,
+        "flex items-center justify-between"
       )}
     >
       <div>
@@ -132,7 +138,7 @@ function ProjectCard({ project, onViewLogs }: { project: Project; onViewLogs: (i
       key={project.id}
       href={`/dashboard/projects/${project.id}`}
       className={cn(
-        "group flex flex-col bg-[#111111] border border-white/10 rounded-2xl overflow-hidden",
+        "group flex flex-col bg-[#0d0d0d] border border-white/10 rounded-2xl overflow-hidden",
         "transition-all duration-300",
         "hover:border-white/20 hover:shadow-[0_8px_30px_-4px_rgba(59,130,246,0.1)]"
       )}
@@ -141,7 +147,7 @@ function ProjectCard({ project, onViewLogs }: { project: Project; onViewLogs: (i
         <div className="flex justify-between items-start mb-3">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center">
-              <GitBranch className="w-4 h-4 text-zinc-300" />
+              <GitBranchIcon className="w-4 h-4 text-zinc-300" />
             </div>
             <div className="min-w-0">
               <h3 className="font-semibold text-white truncate">{project.name}</h3>
@@ -188,7 +194,7 @@ function ProjectCard({ project, onViewLogs }: { project: Project; onViewLogs: (i
           )}
           {project.url ? (
             <a
-              href={project.url}
+              href={`/deployments/${project.lastDeploymentId}`}
               target="_blank"
               rel="noreferrer"
               onClick={(e) => e.stopPropagation()}
@@ -258,68 +264,94 @@ export default function DashboardPage() {
   const [logViewerDeploymentId, setLogViewerDeploymentId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const router = useRouter();
 
   const showToast = useCallback((message: string, type: "success" | "error") => {
+    if (!mountedRef.current) return;
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => {
+      if (mountedRef.current) setToast(null);
+    }, 3000);
   }, []);
 
   const fetchProjects = useCallback(async () => {
+    if (!mountedRef.current) return;
+    
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    abortControllerRef.current = new AbortController();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     
     try {
-      setIsLoading(true);
+      if (mountedRef.current) setIsLoading(true);
       const res = await fetch("/api/projects", { 
         cache: "no-store",
-        signal: abortControllerRef.current.signal 
+        signal: controller.signal 
       });
-      if (!res.ok) throw new Error("Failed to fetch projects");
+      if (!res.ok) {
+        if (res.status === 401) {
+          if (mountedRef.current) router.push("/auth/signin?callbackUrl=/dashboard");
+          return;
+        }
+        throw new Error("Failed to fetch projects");
+      }
       const data = await res.json();
-      setProjects(data);
+      if (mountedRef.current && !controller.signal.aborted) {
+        setProjects(data);
+      }
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") return;
+      if (!mountedRef.current) return;
       console.error("Failed to fetch projects:", error);
       showToast("Failed to load projects", "error");
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current && abortControllerRef.current === controller) {
+        setIsLoading(false);
+      }
     }
-  }, [showToast]);
+  }, [showToast, router]);
 
   const fetchUser = useCallback(async () => {
+    if (!mountedRef.current) return;
     try {
       const res = await fetch("/api/auth/session", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
-        if (data?.user?.email) setUserEmail(data.user.email);
+        if (data?.user?.email && mountedRef.current) setUserEmail(data.user.email);
       }
     } catch {
       // Ignore
     }
   }, []);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
+    mountedRef.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchProjects();
     fetchUser();
-/* eslint-enable react-hooks/set-state-in-effect */
-    const interval = setInterval(fetchProjects, 10000);
+    
+    intervalRef.current = setInterval(fetchProjects, 10000);
+    
     return () => {
-      clearInterval(interval);
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
+      mountedRef.current = false;
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (abortControllerRef.current) abortControllerRef.current.abort();
     };
   }, [fetchProjects, fetchUser]);
 
   const handleSignOut = async () => {
+    mountedRef.current = false;
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (abortControllerRef.current) abortControllerRef.current.abort();
     await signOut({ callbackUrl: "/" });
   };
 
   const handleCreateDeployment = async (e: FormEvent) => {
     e.preventDefault();
+    if (!mountedRef.current) return;
     setIsDeploying(true);
 
     try {
@@ -341,13 +373,19 @@ export default function DashboardPage() {
 
       await res.json();
       await fetchProjects();
-      setFormData({ name: "", repository: "", branch: "main", framework: "Next.js" });
-      setIsDeployModalOpen(false);
-      showToast("Project created successfully", "success");
+      if (mountedRef.current) {
+        setFormData({ name: "", repository: "", branch: "main", framework: "Next.js" });
+        setIsDeployModalOpen(false);
+        showToast("Project created successfully", "success");
+      }
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "Failed to create project", "error");
+      if (mountedRef.current) {
+        showToast(error instanceof Error ? error.message : "Failed to create project", "error");
+      }
     } finally {
-      setIsDeploying(false);
+      if (mountedRef.current) {
+        setIsDeploying(false);
+      }
     }
   };
 
@@ -358,19 +396,19 @@ export default function DashboardPage() {
   );
   
   const activeDeployments = projects.filter(
-    p => p.status === "PENDING" || p.status === "BUILDING"
+    p => p.status === "QUEUED" || p.status === "VALIDATING" || p.status === "CLONING" || p.status === "DETECTING" || p.status === "BUILDING" || p.status === "STARTING"
   ).length;
   
   const completedProjects = projects.filter(
-    p => p.status === "DEPLOYED" || p.status === "FAILED"
+    p => p.status === "RUNNING" || p.status === "FAILED" || p.status === "STOPPED"
   );
   
   const successRate = completedProjects.length > 0
-    ? Math.round((completedProjects.filter(p => p.status === "DEPLOYED").length / completedProjects.length) * 100)
+    ? Math.round((completedProjects.filter(p => p.status === "RUNNING").length / completedProjects.length) * 100)
     : 0;
 
   return (
-    <div className="flex h-screen w-full bg-[#0a0a0a] text-zinc-300 font-sans overflow-hidden selection:bg-blue-500/30">
+    <div className="flex h-screen w-full bg-[#030303] text-zinc-300 font-sans overflow-hidden selection:bg-blue-500/30">
       
       {/* Sidebar Overlay */}
       <AnimatePresence>
@@ -387,7 +425,7 @@ export default function DashboardPage() {
 
       <motion.aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 flex flex-col border-r border-white/10 bg-[#0a0a0a]/95 backdrop-blur-xl lg:static lg:flex",
+          "fixed inset-y-0 left-0 z-50 w-64 flex flex-col border-r border-white/10 bg-[#030303]/95 backdrop-blur-xl lg:static lg:flex",
           "transition-transform duration-300 ease-in-out",
           isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
@@ -402,7 +440,10 @@ export default function DashboardPage() {
           </p>
           <Link 
             href="/dashboard" 
-            className="flex items-center gap-3 rounded-lg bg-white/[0.04] px-3 py-2 text-white font-medium border border-white/5"
+            className={cn(
+              "flex items-center gap-3 rounded-lg px-3 py-2 text-white font-medium border border-white/5",
+              componentStyles.card.base
+            )}
             aria-current="page"
           >
             <LayoutDashboard className="w-4 h-4 text-blue-400" />
@@ -473,7 +514,7 @@ export default function DashboardPage() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[300px] bg-blue-500/10 blur-[120px] rounded-full pointer-events-none" />
 
-        <header className="flex h-16 shrink-0 items-center justify-between px-4 lg:px-8 border-b border-white/10 bg-[#0a0a0a]/80 backdrop-blur-md z-10">
+        <header className="flex h-16 shrink-0 items-center justify-between px-4 lg:px-8 border-b border-white/10 bg-[#030303]/80 backdrop-blur-md z-10">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsSidebarOpen(true)}
@@ -505,7 +546,10 @@ export default function DashboardPage() {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => setIsDeployModalOpen(true)}
-              className="flex items-center gap-2 bg-gradient-to-b from-blue-500 to-cyan-600 hover:from-blue-400 hover:to-cyan-500 text-white px-4 py-1.5 rounded-lg text-sm font-semibold transition-all shadow-[0_0_20px_-5px_rgba(59,130,246,0.4)]"
+              className={cn(
+                "flex items-center gap-2",
+                componentStyles.button.primary
+              )}
             >
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">New Project</span>
@@ -532,7 +576,7 @@ export default function DashboardPage() {
               <StatCard
                 label="Total Projects"
                 value={projects.length}
-                icon={<Layers className="w-4 h-4 text-zinc-400" />}
+                icon={<LayersIcon className="w-4 h-4 text-zinc-400" />}
                 trend={projects.length > 0 ? { value: "+1 this week", positive: true } : undefined}
               />
               <StatCard
@@ -578,13 +622,13 @@ export default function DashboardPage() {
                 />
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" role="list" aria-label="Projects">
-{filteredProjects.map((project) => (
-                      <ProjectCard
-                        key={project.id}
-                        project={project}
-                        onViewLogs={setLogViewerDeploymentId}
-                      />
-                    ))}
+                  {filteredProjects.map((project) => (
+                    <ProjectCard
+                      key={project.id}
+                      project={project}
+                      onViewLogs={setLogViewerDeploymentId}
+                    />
+                  ))}
                 </div>
               )}
             </motion.div>
@@ -632,7 +676,7 @@ export default function DashboardPage() {
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               className="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 p-4"
             >
-              <div className="bg-[#111] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+              <div className="bg-[#0d0d0d] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
                 <div className="flex items-center justify-between p-5 border-b border-white/10 bg-white/[0.02]">
                   <div>
                     <h3 className="text-lg font-semibold text-white">Import Git Repository</h3>
@@ -659,7 +703,7 @@ export default function DashboardPage() {
                           placeholder="username/repo-name"
                           value={formData.repository}
                           onChange={(e) => setFormData({...formData, repository: e.target.value})}
-                          className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg pl-9 pr-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                          className="w-full bg-[#030303] border border-white/10 rounded-lg pl-9 pr-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
                         />
                       </div>
                     </div>
@@ -673,7 +717,7 @@ export default function DashboardPage() {
                           placeholder="my-awesome-app"
                           value={formData.name}
                           onChange={(e) => setFormData({...formData, name: e.target.value})}
-                          className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                          className="w-full bg-[#030303] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
                         />
                       </div>
                       <div>
@@ -681,7 +725,7 @@ export default function DashboardPage() {
                         <select
                           value={formData.framework}
                           onChange={(e) => setFormData({...formData, framework: e.target.value})}
-                          className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all appearance-none"
+                          className="w-full bg-[#030303] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all appearance-none"
                         >
                           <option>Next.js</option>
                           <option>Node.js</option>
@@ -701,7 +745,7 @@ export default function DashboardPage() {
                           type="text"
                           value={formData.branch}
                           onChange={(e) => setFormData({...formData, branch: e.target.value})}
-                          className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg pl-9 pr-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                          className="w-full bg-[#030303] border border-white/10 rounded-lg pl-9 pr-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
                         />
                       </div>
                     </div>
@@ -720,7 +764,11 @@ export default function DashboardPage() {
                       whileTap={{ scale: 0.98 }}
                       type="submit"
                       disabled={isDeploying || !formData.repository || !formData.name}
-                      className="flex items-center gap-2 bg-gradient-to-b from-blue-500 to-cyan-600 hover:from-blue-400 hover:to-cyan-500 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-[0_0_20px_-5px_rgba(59,130,246,0.4)] disabled:opacity-50 disabled:cursor-not-allowed"
+                      className={cn(
+                        "flex items-center gap-2",
+                        componentStyles.button.primary,
+                        "disabled:opacity-50 disabled:cursor-not-allowed"
+                      )}
                     >
                       {isDeploying ? (
                         <>

@@ -26,7 +26,7 @@ import {
   Activity,
 } from "lucide-react";
 import { CloudScaleLogo } from "@/components/ui/CloudScaleLogo";
-import { cn } from "@/lib/design-system";
+import { cn, componentStyles } from "@/lib/design-system";
 
 type Tab = "account" | "security" | "notifications" | "appearance" | "danger";
 
@@ -100,11 +100,10 @@ export default function SettingsPage() {
     }
   };
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchUser();
   }, []);
-/* eslint-enable react-hooks/set-state-in-effect */
 
   const handleAccountUpdate = async (e: FormEvent) => {
     e.preventDefault();
@@ -185,7 +184,7 @@ export default function SettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen w-full bg-[#0a0a0a] text-zinc-300">
+      <div className="flex h-screen w-full bg-[#030303] text-zinc-300">
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
         </div>
@@ -194,11 +193,11 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex h-screen w-full bg-[#0a0a0a] text-zinc-300 font-sans overflow-hidden">
+    <div className="flex h-screen w-full bg-[#030303] text-zinc-300 font-sans overflow-hidden">
       <motion.aside
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
-        className="fixed inset-y-0 left-0 z-50 w-64 flex flex-col border-r border-white/10 bg-[#0a0a0a]/95 backdrop-blur-xl"
+        className="fixed inset-y-0 left-0 z-50 w-64 flex flex-col border-r border-white/10 bg-[#030303]/95 backdrop-blur-xl"
       >
         <div className="flex h-16 items-center px-6 border-b border-white/10">
           <CloudScaleLogo size="md" showText textSize="lg" className="text-white" />
@@ -254,7 +253,7 @@ export default function SettingsPage() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative ml-64">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[300px] bg-blue-500/10 blur-[120px] rounded-full pointer-events-none" />
 
-        <header className="flex h-16 shrink-0 items-center justify-between px-8 border-b border-white/10 bg-[#0a0a0a]/80 backdrop-blur-md z-10">
+        <header className="flex h-16 shrink-0 items-center justify-between px-8 border-b border-white/10 bg-[#030303]/80 backdrop-blur-md z-10">
           <div className="flex items-center gap-4">
             <Link href="/dashboard" className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors">
               <ArrowLeft className="w-5 h-5" />
@@ -318,7 +317,7 @@ export default function SettingsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-6"
               >
-                <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-6">
+                <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "p-6")}>
                   <h2 className="text-lg font-semibold text-white mb-6">Profile Information</h2>
                   <form onSubmit={handleAccountUpdate} className="space-y-4 max-w-md">
                     <div>
@@ -331,7 +330,7 @@ export default function SettingsPage() {
                           value={name}
                           onChange={(e) => setName(e.target.value)}
                           placeholder="John Doe"
-                          className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg pl-9 pr-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                          className={cn(componentStyles.input.base, "pl-9")}
                         />
                       </div>
                     </div>
@@ -345,7 +344,7 @@ export default function SettingsPage() {
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
                           placeholder="you@example.com"
-                          className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg pl-9 pr-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                          className={cn(componentStyles.input.base, "pl-9")}
                         />
                       </div>
                     </div>
@@ -353,7 +352,7 @@ export default function SettingsPage() {
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       type="submit"
-                      className="flex items-center gap-2 bg-gradient-to-b from-blue-500 to-cyan-600 hover:from-blue-400 hover:to-cyan-500 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-[0_0_20px_-5px_rgba(59,130,246,0.4)]"
+                      className={cn("flex items-center gap-2", componentStyles.button.primary)}
                     >
                       <Save className="w-4 h-4" />
                       Save Changes
@@ -361,7 +360,7 @@ export default function SettingsPage() {
                   </form>
                 </div>
 
-                <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-6">
+                <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "p-6")}>
                   <h2 className="text-lg font-semibold text-white mb-4">Connected Accounts</h2>
                   <div className="flex items-center justify-between p-4 bg-white/[0.02] border border-white/10 rounded-xl">
                     <div className="flex items-center gap-3">
@@ -386,7 +385,7 @@ export default function SettingsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-6"
               >
-                <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-6">
+                <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "p-6")}>
                   <h2 className="text-lg font-semibold text-white mb-6">Change Password</h2>
                   <form onSubmit={handlePasswordChange} className="space-y-4 max-w-md">
                     <div>
@@ -399,7 +398,7 @@ export default function SettingsPage() {
                           value={currentPassword}
                           onChange={(e) => setCurrentPassword(e.target.value)}
                           placeholder="••••••••"
-                          className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg pl-9 pr-12 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                          className={cn(componentStyles.input.base, "pl-9 pr-12")}
                         />
                         <button
                           type="button"
@@ -421,7 +420,7 @@ export default function SettingsPage() {
                           onChange={(e) => setNewPassword(e.target.value)}
                           placeholder="••••••••"
                           minLength={8}
-                          className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg pl-9 pr-12 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                          className={cn(componentStyles.input.base, "pl-9 pr-12")}
                         />
                         <button
                           type="button"
@@ -443,7 +442,7 @@ export default function SettingsPage() {
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
                           placeholder="••••••••"
-                          className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg pl-9 pr-12 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                          className={cn(componentStyles.input.base, "pl-9 pr-12")}
                         />
                         <button
                           type="button"
@@ -458,7 +457,7 @@ export default function SettingsPage() {
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       type="submit"
-                      className="flex items-center gap-2 bg-gradient-to-b from-blue-500 to-cyan-600 hover:from-blue-400 hover:to-cyan-500 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-[0_0_20px_-5px_rgba(59,130,246,0.4)]"
+                      className={cn("flex items-center gap-2", componentStyles.button.primary)}
                     >
                       <RotateCcw className="w-4 h-4" />
                       Update Password
@@ -466,7 +465,7 @@ export default function SettingsPage() {
                   </form>
                 </div>
 
-                <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-6">
+                <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "p-6")}>
                   <h2 className="text-lg font-semibold text-white mb-4">Active Sessions</h2>
                   <div className="p-4 bg-white/[0.02] border border-white/10 rounded-xl">
                     <div className="flex items-center justify-between">
@@ -502,7 +501,7 @@ export default function SettingsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-6"
               >
-                <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-6">
+                <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "p-6")}>
                   <h2 className="text-lg font-semibold text-white mb-6">Email Notifications</h2>
                   <div className="space-y-4">
                     {[
@@ -511,7 +510,7 @@ export default function SettingsPage() {
                       { key: "emailNotifications", label: "Product Updates", description: "Occasional emails about new features and improvements" },
                     ].map((item) => {
                       const checked = item.key === "deploymentNotifications" ? deploymentNotifications : 
-                                     item.key === "securityNotifications" ? securityNotifications : emailNotifications;
+                                       item.key === "securityNotifications" ? securityNotifications : emailNotifications;
                       const setChecked = item.key === "deploymentNotifications" ? setDeploymentNotifications :
                                         item.key === "securityNotifications" ? setSecurityNotifications : setEmailNotifications;
                       return (
@@ -544,7 +543,7 @@ export default function SettingsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-6"
               >
-                <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-6">
+                <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "p-6")}>
                   <h2 className="text-lg font-semibold text-white mb-6">Theme</h2>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {themeOptions.map((option) => (
@@ -567,7 +566,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-6">
+                <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "p-6")}>
                   <h2 className="text-lg font-semibold text-white mb-6">Layout</h2>
                   <div className="space-y-4">
                     <div className="flex items-center justify-between p-4 bg-white/[0.02] border border-white/10 rounded-xl">
@@ -597,7 +596,7 @@ export default function SettingsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-6"
               >
-                <div className="bg-white/[0.02] border border-red-500/20 rounded-2xl p-6">
+                <div className={cn(componentStyles.card.base, "border-red-500/20", "p-6")}>
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-10 h-10 rounded-lg bg-red-500/20 flex items-center justify-center">
                       <Trash2 className="w-5 h-5 text-red-400" />
@@ -615,7 +614,7 @@ export default function SettingsPage() {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={handleDeleteAccount}
-                    className="flex items-center gap-2 bg-red-500/20 border border-red-500/30 hover:bg-red-500/30 hover:border-red-500/50 text-red-400 hover:text-red-300 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all"
+                    className={cn("flex items-center gap-2", componentStyles.button.danger)}
                   >
                     <Trash2 className="w-4 h-4" />
                     Delete My Account

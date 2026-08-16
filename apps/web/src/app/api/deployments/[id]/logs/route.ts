@@ -30,6 +30,13 @@ export async function GET(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    // Fetch structured logs from database
+    const structuredLogs = await prisma.deploymentLog.findMany({
+      where: { deploymentId },
+      orderBy: { timestamp: "asc" },
+      select: { stage: true, message: true, timestamp: true },
+    });
+
     const channel = `logs:${deploymentId}`;
     const subscriber = createRedisSubscriber();
 
@@ -48,7 +55,11 @@ export async function GET(
           controller.enqueue(encoder.encode(`data: ${data}\n\n`));
         };
 
-        if (deployment.logs) {
+        // Send historical structured logs
+        if (structuredLogs.length > 0) {
+          sendEvent("historical", JSON.stringify({ logs: structuredLogs }));
+        } else if (deployment.logs) {
+          // Fallback to legacy logs
           sendEvent("historical", deployment.logs);
         }
 

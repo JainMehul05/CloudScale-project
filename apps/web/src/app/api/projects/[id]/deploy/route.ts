@@ -39,7 +39,7 @@ export async function POST(
     const deployment = await prisma.deployment.create({
       data: {
         projectId: project.id,
-        status: "PENDING",
+        status: "QUEUED",
       },
     });
 

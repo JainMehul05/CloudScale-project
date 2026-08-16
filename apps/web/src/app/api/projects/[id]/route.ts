@@ -49,7 +49,7 @@ export async function GET(
       repository: project.githubRepo,
       branch: project.branch,
       framework: "Next.js",
-      status: latestDeployment?.status ?? "PENDING",
+      status: latestDeployment?.status ?? "QUEUED",
       url: latestDeployment?.liveUrl ?? null,
       createdAt: project.createdAt,
       updatedAt: project.createdAt,

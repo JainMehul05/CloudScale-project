@@ -40,7 +40,7 @@ export async function GET() {
         repository: project.githubRepo,
         branch: project.branch,
         framework: "Next.js",
-        status: latestDeployment?.status ?? "PENDING",
+        status: latestDeployment?.status ?? "QUEUED",
         url: latestDeployment?.liveUrl ?? null,
         createdAt: project.createdAt,
         updatedAt: project.createdAt,
@@ -90,7 +90,7 @@ export async function POST(request: Request) {
     const deployment = await prisma.deployment.create({
       data: {
         projectId: project.id,
-        status: "PENDING",
+        status: "QUEUED",
       },
     });
 
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
         repository: project.githubRepo,
         branch: project.branch,
         framework: framework || "Next.js",
-        status: deployment.status,
+        status: "QUEUED",
         url: deployment.liveUrl ?? null,
         createdAt: project.createdAt,
         updatedAt: project.createdAt,

@@ -18,11 +18,14 @@ import {
   Shield,
   Globe,
   Cpu,
+  Rocket,
+  CheckCircle2,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import ProductPreview from "@/components/ProductPreview";
 import { CloudScaleLogo } from "@/components/ui/CloudScaleLogo";
 import { useMousePosition, useReducedMotion } from "@/hooks/useMousePosition";
+import { cn } from "@/lib/design-system";
 
 const GITHUB_URL = "https://github.com/JainMehul05/cloudscale-test-app";
 
@@ -51,7 +54,7 @@ function MouseFollowGlow({ className, intensity = 1 }: { className?: string; int
   return (
     <div
       aria-hidden
-      className={`pointer-events-none absolute rounded-full blur-[110px] transition-all duration-300 ease-out ${className ?? ""}`}
+      className={cn("pointer-events-none absolute rounded-full blur-[110px] transition-all duration-300 ease-out", className ?? "")}
       style={{
         left: x,
         top: y,
@@ -64,10 +67,7 @@ function MouseFollowGlow({ className, intensity = 1 }: { className?: string; int
 
 function GlowOrb({ className }: { className?: string }) {
   return (
-    <div
-      aria-hidden
-      className={`pointer-events-none absolute rounded-full blur-[110px] ${className ?? ""}`}
-    />
+    <div aria-hidden className={cn("pointer-events-none absolute rounded-full blur-[110px]", className ?? "")} />
   );
 }
 
@@ -97,14 +97,15 @@ function PrimaryButton({
       href={href}
       target={external ? "_blank" : undefined}
       rel={external ? "noopener noreferrer" : undefined}
-      className={`
-        group relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-lg
-        bg-gradient-to-b from-blue-500 to-cyan-600
-        px-6 py-3.5 text-sm font-semibold text-white
-        shadow-[0_0_0_1px_rgba(59,130,246,0.4),0_8px_28px_-6px_rgba(59,130,246,0.65)]
-        transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98] sm:w-auto
-        ${className}
-      `}
+      className={cn(
+        "group relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl",
+        "bg-gradient-to-b from-blue-500 to-cyan-600",
+        "hover:from-blue-400 hover:to-cyan-500",
+        "px-6 py-3.5 text-sm font-semibold text-white",
+        "shadow-[0_0_24px_-6px_rgba(59,130,246,0.4)]",
+        "transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98] sm:w-auto",
+        className
+      )}
     >
       <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
       <span className="relative flex items-center gap-2">
@@ -137,12 +138,12 @@ function SecondaryButton({
       href={href}
       target={external ? "_blank" : undefined}
       rel={external ? "noopener noreferrer" : undefined}
-      className={`
-        inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.02]
-        px-6 py-3.5 text-sm font-semibold text-zinc-200 backdrop-blur-sm
-        transition-colors duration-200 hover:border-white/20 hover:bg-white/[0.06] sm:w-auto
-        ${className}
-      `}
+      className={cn(
+        "inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.02]",
+        "px-6 py-3.5 text-sm font-semibold text-zinc-200 backdrop-blur-sm",
+        "transition-colors duration-200 hover:border-white/20 hover:bg-white/[0.06] sm:w-auto",
+        className
+      )}
     >
       {icon}
       {children}
@@ -162,7 +163,7 @@ function Hero() {
         className="absolute inset-0 -z-10 [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,black,transparent)]"
         style={{
           backgroundImage:
-            "linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px)",
+            "linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px)",
           backgroundSize: "56px 56px",
         }}
       />
@@ -179,7 +180,7 @@ function Hero() {
               transition={{ delay: 0.2, type: "spring", stiffness: 300 }}
               className="h-2 w-2 rounded-full bg-emerald-400"
             />
-            Now with AI-powered debugging
+            Production-ready deployments
           </SectionEyebrow>
         </motion.div>
 
@@ -189,11 +190,11 @@ function Hero() {
           transition={{ duration: 0.6, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
           className="font-display mt-6 text-4xl font-semibold leading-[1.08] tracking-tight text-white sm:text-6xl lg:text-7xl"
         >
-          Deploy, monitor, and{" "}
+          Deploy, scale, and{" "}
           <span className="bg-gradient-to-r from-blue-400 via-cyan-300 to-violet-400 bg-clip-text text-transparent">
-            debug
+            ship
           </span>{" "}
-          applications on the cloud automatically
+          applications automatically
         </motion.h1>
 
         <motion.p
@@ -202,8 +203,8 @@ function Hero() {
           transition={{ duration: 0.6, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
           className="mx-auto mt-6 max-w-2xl text-balance text-base leading-relaxed text-zinc-400 sm:text-lg"
         >
-          CloudScale turns your GitHub repository into production-ready cloud
-          deployments using Docker, hardened containers, worker queues, and AI-powered troubleshooting.
+          CloudScale turns your GitHub repository into production-ready cloud deployments using Docker,
+          hardened containers, worker queues, and real-time monitoring.
         </motion.p>
 
         <motion.div
@@ -212,9 +213,9 @@ function Hero() {
           transition={{ duration: 0.6, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
           className="mx-auto mt-10 flex max-w-md flex-col items-center justify-center gap-3 sm:max-w-none sm:flex-row"
         >
-          <MagneticButton href="/auth/signin" icon={<ArrowRight className="h-4 w-4" />} strength={0.4}>
+          <PrimaryButton href="/auth/signin" icon={<ArrowRight className="h-4 w-4" />}>
             Start Deploying
-          </MagneticButton>
+          </PrimaryButton>
           <SecondaryButton
             href={GITHUB_URL}
             external
@@ -232,7 +233,7 @@ function Hero() {
         className="mt-20 relative mx-auto max-w-5xl"
       >
         <div className="relative rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.03] to-transparent p-1">
-          <div className="rounded-xl bg-zinc-950/80 p-6 backdrop-blur-xl">
+          <div className="rounded-xl bg-[#030303]/80 p-6 backdrop-blur-xl">
             <div className="flex items-center gap-3 mb-6">
               <div className="flex gap-1.5">
                 <span className="h-3 w-3 rounded-full bg-red-500/70" />
@@ -259,139 +260,40 @@ function Hero() {
   );
 }
 
-function MagneticButton({
-  children,
-  href = "#",
-  icon,
-  external = false,
-  className = "",
-  strength = 0.3,
-}: {
-  children: ReactNode;
-  href?: string;
-  icon?: ReactNode;
-  external?: boolean;
-  className?: string;
-  strength?: number;
-}) {
-  const { x, y } = useMousePosition();
-  const reducedMotion = useReducedMotion();
-  const ref = useRef<HTMLAnchorElement>(null);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-
-  useEffect(() => {
-    if (reducedMotion || !ref.current) return;
-
-    const raf = requestAnimationFrame(() => {
-      const rect = ref.current?.getBoundingClientRect();
-      if (!rect) return;
-
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const deltaX = (x - centerX) * strength;
-      const deltaY = (y - centerY) * strength;
-
-      setOffset({ x: deltaX, y: deltaY });
-    });
-
-    return () => cancelAnimationFrame(raf);
-  }, [x, y, strength, reducedMotion]);
-
+function TrustedBy() {
   return (
-    <a
-      ref={ref}
-      href={href}
-      target={external ? "_blank" : undefined}
-      rel={external ? "noopener noreferrer" : undefined}
-      className={`
-        group relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-lg
-        bg-gradient-to-b from-blue-500 to-cyan-600
-        px-6 py-3.5 text-sm font-semibold text-white
-        shadow-[0_0_0_1px_rgba(59,130,246,0.4),0_8px_28px_-6px_rgba(59,130,246,0.65)]
-        transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98] sm:w-auto
-        ${className}
-      `}
-      style={{
-        transform: `translate(${offset.x}px, ${offset.y}px) ${offset.x || offset.y ? "scale(1.02)" : ""}`,
-      }}
-    >
-      <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-      <span className="relative flex items-center gap-2">
-        {children}
-        {icon && (
-          <span className="relative transition-transform duration-200 group-hover:translate-x-0.5">
-            {icon}
-          </span>
-        )}
-      </span>
-    </a>
+    <section className="relative px-4 py-16 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl">
+        <p className="text-center text-xs font-medium uppercase tracking-widest text-zinc-500 mb-8">
+          Trusted by developers worldwide
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-10 opacity-50">
+          <span className="font-mono text-sm text-zinc-400">Vercel</span>
+          <span className="font-mono text-sm text-zinc-400">Railway</span>
+          <span className="font-mono text-sm text-zinc-400">Render</span>
+          <span className="font-mono text-sm text-zinc-400">Fly.io</span>
+          <span className="font-mono text-sm text-zinc-400">Supabase</span>
+        </div>
+      </div>
+    </section>
   );
 }
 
-function TiltCard({
-  children,
-  className = "",
-  maxTilt = 8,
-  scale = 1.02,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  maxTilt?: number;
-  scale?: number;
-}) {
-  const { x, y } = useMousePosition();
-  const reducedMotion = useReducedMotion();
-  const ref = useRef<HTMLDivElement>(null);
-  const [rotation, setRotation] = useState({ x: 0, y: 0 });
-  const [isHovered, setIsHovered] = useState(false);
+const METRICS = [
+  { label: "Deployments", value: "10k+", icon: Rocket },
+  { label: "Success Rate", value: "99.9%", icon: CheckCircle2 },
+  { label: "Regions", value: "12", icon: Globe },
+  { label: "Latency", value: "<50ms", icon: Zap },
+] as const;
 
-  useEffect(() => {
-    if (reducedMotion || !ref.current) return;
-
-    const raf = requestAnimationFrame(() => {
-      const rect = ref.current?.getBoundingClientRect();
-      if (!rect || !isHovered) {
-        setRotation({ x: 0, y: 0 });
-        return;
-      }
-
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const deltaX = (x - centerX) / (rect.width / 2);
-      const deltaY = (y - centerY) / (rect.height / 2);
-
-      setRotation({
-        x: Math.max(-maxTilt, Math.min(maxTilt, -deltaY * maxTilt)),
-        y: Math.max(-maxTilt, Math.min(maxTilt, deltaX * maxTilt)),
-      });
-    });
-
-    return () => cancelAnimationFrame(raf);
-  }, [x, y, maxTilt, isHovered, reducedMotion]);
-
+function Metrics() {
   return (
-    <div
-      ref={ref}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      className={className}
-      style={{
-        transform: isHovered
-          ? `perspective(1000px) rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) scale(${scale})`
-          : "none",
-        transition: "transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
-        transformStyle: "preserve-3d",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
+    <section className="relative px-4 py-20 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           className="mx-auto mt-8 grid max-w-3xl grid-cols-2 gap-4 sm:grid-cols-4"
         >
           {METRICS.map((metric) => (
@@ -425,7 +327,7 @@ const FEATURES = [
     icon: Container,
     title: "Docker Deployments",
     description:
-      "Push to GitHub and CloudScale builds, containers, and ships your app automatically  no complex configurations required.",
+      "Push to GitHub and CloudScale builds, containers, and ships your app automatically — no complex configurations required.",
     highlight: "Zero-config Docker builds",
   },
   {
@@ -502,7 +404,7 @@ function Features() {
               viewport={{ once: true }}
               transition={{ duration: 0.4, delay: index * 0.08 }}
             >
-              <TiltCard maxTilt={6} scale={1.015} className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.02] p-6 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.04] hover:shadow-[0_8px_30px_-4px_rgba(59,130,246,0.1)]">
+              <div className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.02] p-6 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.04] hover:shadow-[0_8px_30px_-4px_rgba(59,130,246,0.1)]">
                 <div
                   aria-hidden
                   className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-blue-500/0 blur-2xl transition-all duration-500 group-hover:bg-blue-500/15"
@@ -519,7 +421,7 @@ function Features() {
                 <span className="absolute bottom-6 right-6 text-xs font-mono text-zinc-600 group-hover:text-zinc-400 transition-colors">
                   {feature.highlight}
                 </span>
-              </TiltCard>
+              </div>
             </motion.div>
           ))}
         </motion.div>
@@ -598,7 +500,7 @@ function HowItWorks() {
               transition={{ duration: 0.4, delay: i * 0.1 }}
               className="relative flex flex-col items-start"
             >
-              <div className="relative z-10 flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-zinc-950 text-blue-300 shadow-[0_0_0_4px_rgba(0,0,0,1)] group-hover:border-blue-500/50 transition-colors">
+              <div className="relative z-10 flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-[#030303] text-blue-300 shadow-[0_0_0_4px_rgba(0,0,0,1)] group-hover:border-blue-500/50 transition-colors">
                 <step.icon className="h-6 w-6" strokeWidth={1.75} />
               </div>
               <span className="mt-4 font-mono text-xs text-zinc-600">
@@ -687,9 +589,9 @@ function CallToAction() {
           production before your coffee gets cold.
         </p>
         <div className="relative mx-auto mt-8 flex max-w-md flex-col items-center justify-center gap-3 sm:max-w-none sm:flex-row">
-          <MagneticButton href="/auth/signin" icon={<ArrowRight className="h-4 w-4" />} strength={0.4}>
+          <PrimaryButton href="/auth/signin" icon={<ArrowRight className="h-4 w-4" />}>
             Start Deploying
-          </MagneticButton>
+          </PrimaryButton>
           <SecondaryButton
             href={GITHUB_URL}
             external
@@ -806,6 +708,7 @@ export default function Page() {
       <Navbar />
       <Hero />
       <TrustedBy />
+      <Metrics />
       <ProductPreview />
       <Features />
       <HowItWorks />
@@ -815,11 +718,3 @@ export default function Page() {
     </main>
   );
 }
-
-
-
-
-
-
-
-

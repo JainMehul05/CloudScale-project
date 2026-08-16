@@ -6,6 +6,7 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, Lock, AlertCircle, Loader2 } from "lucide-react";
 import { CloudScaleLogo } from "@/components/ui/CloudScaleLogo";
+import { cn, componentStyles } from "@/lib/design-system";
 
 function SignInContent() {
   const router = useRouter();
@@ -45,7 +46,7 @@ function SignInContent() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a] px-4">
+    <div className="flex min-h-screen items-center justify-center bg-[#030303] px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <CloudScaleLogo size="lg" showText textSize="xl" className="mx-auto mb-4" />
@@ -53,7 +54,7 @@ function SignInContent() {
           <p className="mt-2 text-zinc-400">Sign in to your CloudScale account</p>
         </div>
 
-        <div className="bg-[#111111] border border-white/10 rounded-2xl p-8">
+        <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "p-8")}>
           {(error || formError) && (
             <div className="mb-6 flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -75,7 +76,7 @@ function SignInContent() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
                   required
-                  className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg pl-9 pr-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                  className={cn(componentStyles.input.base, "pl-9")}
                 />
               </div>
             </div>
@@ -93,7 +94,7 @@ function SignInContent() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg pl-9 pr-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                  className={cn(componentStyles.input.base, "pl-9")}
                 />
               </div>
             </div>
@@ -101,7 +102,7 @@ function SignInContent() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full flex items-center justify-center gap-2 bg-gradient-to-b from-blue-500 to-cyan-600 hover:from-blue-400 hover:to-cyan-500 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-[0_0_20px_-5px_rgba(59,130,246,0.4)] disabled:opacity-50 disabled:cursor-not-allowed"
+              className={cn("w-full flex items-center justify-center gap-2", componentStyles.button.primary, "disabled:opacity-50 disabled:cursor-not-allowed")}
             >
               {isLoading ? (
                 <>
@@ -128,7 +129,7 @@ function SignInContent() {
 
 export default function SignInPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#0a0a0a] px-4"><div className="w-8 h-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" /></div>}>
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#030303] px-4"><div className="w-8 h-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" /></div>}>
       <SignInContent />
     </Suspense>
   );

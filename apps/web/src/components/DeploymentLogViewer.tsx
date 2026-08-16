@@ -7,7 +7,7 @@ import {
   Pause, Play, Copy, Trash2, Download, Maximize2, Minimize2,
   ChevronDown, X
 } from "lucide-react";
-import { cn } from "@/lib/design-system";
+import { cn, componentStyles } from "@/lib/design-system";
 import { useReducedMotion } from "@/hooks/useMousePosition";
 
 interface DeploymentLogViewerProps {
@@ -101,8 +101,18 @@ export function DeploymentLogViewer({
 
     eventSource.addEventListener("historical", (event) => {
       if (isMountedRef.current && event.data) {
-        const lines = event.data.split("\n").filter(Boolean);
-        addLogBatch(lines);
+        try {
+          const parsed = JSON.parse(event.data);
+          if (parsed.logs && Array.isArray(parsed.logs)) {
+            addLogBatch(parsed.logs.map((l: { message: string }) => l.message));
+          } else {
+            const lines = event.data.split("\n").filter(Boolean);
+            addLogBatch(lines);
+          }
+        } catch {
+          const lines = event.data.split("\n").filter(Boolean);
+          addLogBatch(lines);
+        }
       }
     });
 
@@ -114,9 +124,31 @@ export function DeploymentLogViewer({
 
     eventSource.onmessage = (event) => {
       if (isMountedRef.current && event.data) {
-        addLogBatch([event.data]);
+        try {
+          const parsed = JSON.parse(event.data);
+          if (parsed.message) {
+            addLogBatch([parsed.message]);
+          } else {
+            addLogBatch([event.data]);
+          }
+        } catch {
+          addLogBatch([event.data]);
+        }
       }
     };
+
+    eventSource.addEventListener("progress", (event) => {
+      if (isMountedRef.current && event.data) {
+        try {
+          const parsed = JSON.parse(event.data);
+          if (parsed.message) {
+            addLogBatch([parsed.message]);
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    });
 
     eventSource.onerror = () => {
       if (isMountedRef.current) {
@@ -190,7 +222,7 @@ export function DeploymentLogViewer({
   const statusConfig = getStatusConfig();
 
   const motionProps = reducedMotion
-    ? { initial: false, animate: false, exit: false }
+    ? { initial: false, animate: undefined, exit: undefined }
     : {
         initial: { opacity: 0, scale: 0.95, y: 20 },
         animate: { opacity: 1, scale: 1, y: 0 },
@@ -201,8 +233,10 @@ export function DeploymentLogViewer({
     <motion.div
       {...motionProps}
       className={cn(
-        "bg-[#0a0a0a] border border-white/10 rounded-2xl overflow-hidden flex flex-col",
-        "shadow-[0_20px_40px_-10px_rgba(0,0,0,0.5)]",
+        componentStyles.card.base,
+        componentStyles.card.hover,
+        componentStyles.card.elevated,
+        "flex flex-col overflow-hidden",
         isExpanded ? "fixed inset-4 z-50 max-w-none h-[calc(100vh-2rem)]" : "h-[600px] w-full max-w-4xl"
       )}
     >
@@ -229,7 +263,7 @@ export function DeploymentLogViewer({
           <select
             value={filterLevel}
             onChange={(e) => setFilterLevel(e.target.value as typeof filterLevel)}
-            className="bg-[#0a0a0a] border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none"
+            className="bg-[#030303] border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none"
             aria-label="Filter logs"
           >
             <option value="all">All</option>
@@ -297,7 +331,7 @@ export function DeploymentLogViewer({
       {/* Log Container */}
       <div
         ref={logContainerRef}
-        className="flex-1 overflow-y-auto p-4 bg-[#050505]"
+        className="flex-1 overflow-y-auto p-4 bg-[#030303]"
         style={{ fontFamily: "'JetBrains Mono', 'Fira Code', 'Monaco', monospace" }}
         onScroll={(e) => {
           const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
@@ -306,12 +340,12 @@ export function DeploymentLogViewer({
           if (autoScroll && !isAtBottom) setAutoScroll(false);
         }}
       >
-<AnimatePresence mode="popLayout">
+        <AnimatePresence mode="popLayout">
           {filteredLogs.length === 0 ? (
             <motion.div
-              initial={reducedMotion ? false : { opacity: 0, y: 10 }}
-              animate={reducedMotion ? false : { opacity: 1, y: 0 }}
-              exit={reducedMotion ? false : { opacity: 0, y: -10 }}
+              initial={reducedMotion ? undefined : { opacity: 0, y: 10 }}
+              animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+              exit={reducedMotion ? undefined : { opacity: 0, y: -10 }}
               className="flex flex-col items-center justify-center h-full text-zinc-600"
             >
               <Loader2 className="w-8 h-8 animate-spin mb-3 text-zinc-500" />
@@ -323,10 +357,10 @@ export function DeploymentLogViewer({
               {filteredLogs.map((log) => (
                 <motion.div
                   key={log.id}
-                  initial={reducedMotion ? false : { opacity: 0, x: -10 }}
-                  animate={reducedMotion ? false : { opacity: 1, x: 0 }}
-                  exit={reducedMotion ? false : { opacity: 0, x: 10 }}
-                  transition={reducedMotion ? false : { duration: 0.15 }}
+                  initial={reducedMotion ? undefined : { opacity: 0, x: -10 }}
+                  animate={reducedMotion ? undefined : { opacity: 1, x: 0 }}
+                  exit={reducedMotion ? undefined : { opacity: 0, x: 10 }}
+                  transition={reducedMotion ? undefined : { duration: 0.15 }}
                   className={cn(
                     "px-2 py-0.5 border-l-2 transition-colors",
                     "hover:bg-white/[0.02]",
@@ -350,7 +384,7 @@ export function DeploymentLogViewer({
                         "text-zinc-200"
                       )}
                     >
-                      {log.content || <span className="text-zinc-800">��</span>}
+                      {log.content || <span className="text-zinc-800">�</span>}
                     </span>
                   </span>
                 </motion.div>

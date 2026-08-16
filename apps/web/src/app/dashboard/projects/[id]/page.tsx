@@ -25,8 +25,9 @@ import {
 } from "lucide-react";
 import { EnvironmentVariableManager } from "@/components/EnvironmentVariableManager";
 import { CloudScaleLogo } from "@/components/ui/CloudScaleLogo";
+import { cn, getStatusStyles, componentStyles } from "@/lib/design-system";
 
-type DeploymentStatus = "PENDING" | "BUILDING" | "DEPLOYED" | "FAILED";
+type DeploymentStatus = "QUEUED" | "VALIDATING" | "CLONING" | "DETECTING" | "BUILDING" | "STARTING" | "RUNNING" | "FAILED" | "STOPPED";
 
 interface Deployment {
   id: string;
@@ -55,36 +56,35 @@ interface Project {
 }
 
 const getStatusConfig = (status: DeploymentStatus) => {
-  switch (status) {
-    case "DEPLOYED":
-      return {
-        icon: <CheckCircle2 className="w-3.5 h-3.5" />,
-        text: "Deployed",
-        styles: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-        dot: "bg-emerald-400",
-      };
-    case "BUILDING":
-      return {
-        icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
-        text: "Building",
-        styles: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-        dot: "bg-amber-400 animate-pulse",
-      };
-    case "PENDING":
-      return {
-        icon: <Clock className="w-3.5 h-3.5" />,
-        text: "Pending",
-        styles: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-        dot: "bg-blue-400",
-      };
-    case "FAILED":
-      return {
-        icon: <XCircle className="w-3.5 h-3.5" />,
-        text: "Failed",
-        styles: "bg-red-500/10 text-red-400 border-red-500/20",
-        dot: "bg-red-400",
-      };
-  }
+  const styles = getStatusStyles(status.toLowerCase() as keyof typeof import("@/lib/design-system").colors.status);
+  const icons = {
+    QUEUED: <Clock className="w-3.5 h-3.5" />,
+    VALIDATING: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
+    CLONING: <GitBranch className="w-3.5 h-3.5 animate-spin" />,
+    DETECTING: <Activity className="w-3.5 h-3.5 animate-spin" />,
+    BUILDING: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
+    STARTING: <Rocket className="w-3.5 h-3.5 animate-spin" />,
+    RUNNING: <CheckCircle2 className="w-3.5 h-3.5" />,
+    FAILED: <XCircle className="w-3.5 h-3.5" />,
+    STOPPED: <Square className="w-3.5 h-3.5" />,
+  };
+  const texts = {
+    QUEUED: "Queued",
+    VALIDATING: "Validating",
+    CLONING: "Cloning",
+    DETECTING: "Detecting",
+    BUILDING: "Building",
+    STARTING: "Starting",
+    RUNNING: "Running",
+    FAILED: "Failed",
+    STOPPED: "Stopped",
+  };
+  return {
+    icon: icons[status],
+    text: texts[status],
+    styles: `${styles.bg.replace("rgba(", "bg-").replace(")", "")} ${styles.text.replace("text-", "")} ${styles.border.replace("rgba(", "border-").replace(")", "")}`,
+    dot: styles.dot.replace("bg-", "bg-"),
+  };
 };
 
 const formatDate = (dateString: string) => {
@@ -183,7 +183,7 @@ export default function ProjectDetailPage({
 
   const handleDeploymentAction = async (
     deploymentId: string,
-    action: "stop" | "restart" | "delete"
+    action: "stop" | "restart" | "delete" | "start"
   ) => {
     setActionLoading(deploymentId);
     try {
@@ -202,7 +202,7 @@ export default function ProjectDetailPage({
 
       showToast(`Deployment ${action} successful`, "success");
 
-      if (action === "restart" && data.newDeploymentId) {
+      if ((action === "restart" || action === "start") && data.newDeploymentId) {
         // Refresh project to show new deployment
         const { id: projectId } = await params;
         const projectRes = await fetch(`/api/projects/${projectId}`, { cache: "no-store" });
@@ -226,11 +226,12 @@ export default function ProjectDetailPage({
     }
   };
 
-  const confirmAction = (deploymentId: string, action: "stop" | "restart" | "delete") => {
+  const confirmAction = (deploymentId: string, action: "stop" | "restart" | "delete" | "start") => {
     const messages = {
       stop: "Stop this deployment? The container will be stopped but deployment history will remain.",
       restart: "Restart this deployment? This will create a new deployment with the same configuration.",
       delete: "Delete this deployment? This action cannot be undone.",
+      start: "Start this deployment? This will create a new deployment with the same configuration.",
     };
     if (confirm(messages[action])) {
       handleDeploymentAction(deploymentId, action);
@@ -239,7 +240,7 @@ export default function ProjectDetailPage({
 
   if (isLoading) {
     return (
-      <div className="flex h-screen w-full bg-[#0a0a0a] text-zinc-300">
+      <div className="flex h-screen w-full bg-[#030303] text-zinc-300">
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
         </div>
@@ -249,14 +250,17 @@ export default function ProjectDetailPage({
 
   if (error || !project) {
     return (
-      <div className="flex h-screen w-full bg-[#0a0a0a] text-zinc-300">
+      <div className="flex h-screen w-full bg-[#030303] text-zinc-300">
         <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
           <XCircle className="w-12 h-12 text-red-400 mb-4" />
           <h2 className="text-xl font-semibold text-white mb-2">Project Not Found</h2>
           <p className="text-zinc-500 mb-6">{error || "Project does not exist"}</p>
           <a
             href="/dashboard"
-            className="flex items-center gap-2 bg-white text-black hover:bg-zinc-200 px-4 py-2 rounded-lg text-sm font-semibold"
+            className={cn(
+              "flex items-center gap-2 bg-white text-black hover:bg-zinc-200 px-4 py-2 rounded-lg text-sm font-semibold",
+              componentStyles.button.secondary
+            )}
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Dashboard
@@ -269,9 +273,9 @@ export default function ProjectDetailPage({
   const statusConfig = getStatusConfig(project.status);
 
   return (
-    <div className="flex h-screen w-full bg-[#0a0a0a] text-zinc-300 font-sans overflow-hidden">
+    <div className="flex h-screen w-full bg-[#030303] text-zinc-300 font-sans overflow-hidden">
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="flex h-16 shrink-0 items-center justify-between px-4 lg:px-8 border-b border-white/10 bg-[#0a0a0a]/80 backdrop-blur-md z-10">
+        <header className="flex h-16 shrink-0 items-center justify-between px-4 lg:px-8 border-b border-white/10 bg-[#030303]/80 backdrop-blur-md z-10">
           <div className="flex items-center gap-4">
             <a
               href="/dashboard"
@@ -283,51 +287,71 @@ export default function ProjectDetailPage({
             <div className="flex items-center gap-2 px-3 py-1 bg-white/[0.03] border border-white/10 rounded-lg">
               <CloudScaleLogo size="sm" className="text-white" />
               <span className="text-sm font-medium text-white">{project.name}</span>
-              <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium border ${statusConfig.styles}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dot}`} />
+              <span className={cn(
+                "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium border",
+                statusConfig.styles
+              )}>
+                <span className={cn("w-1.5 h-1.5 rounded-full", statusConfig.dot)} />
                 {statusConfig.text}
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={handleDeploy}
-              disabled={isDeploying || project.status === "BUILDING" || project.status === "PENDING"}
-              className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-b from-blue-500 to-cyan-600 hover:from-blue-400 hover:to-cyan-500 text-white text-sm font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_-5px_rgba(59,130,246,0.4)]"
-            >
-              {isDeploying ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Deploying...
-                </>
-              ) : (
-                <>
-                  <Play className="w-3.5 h-3.5" />
-                  Deploy
-                </>
-              )}
-            </button>
-            {project.url && (
-              <a
-                href={project.url}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
-              >
-                <Globe className="w-3.5 h-3.5" />
-                Visit
-              </a>
-            )}
-          </div>
+  <button
+    onClick={handleDeploy}
+    disabled={isDeploying}
+    className={cn(
+      "flex items-center gap-2 px-5 py-2 rounded-lg font-medium transition-all",
+      componentStyles.button.primary,
+      "disabled:opacity-50 disabled:cursor-not-allowed"
+    )}
+  >
+    {isDeploying ? (
+      <>
+        <Loader2 className="w-4 h-4 animate-spin" />
+        Deploying...
+      </>
+    ) : (
+      <>
+        <Rocket className="w-4 h-4" />
+        Deploy
+      </>
+    )}
+  </button>
+
+{project.url && (
+                  <a
+                    href={project.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+                  >
+                    <Globe className="w-4 h-4" />
+                    Visit
+                  </a>
+                )}
+                {project.deployments && project.deployments[0]?.status === "RUNNING" && (
+                  <a
+                    href={`/deployments/${project.deployments[0].id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-2 text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
+                  >
+                    <Globe className="w-4 h-4" />
+                    Open App
+                  </a>
+                )}
+</div>
         </header>
 
         {toast && (
-          <div className={`mx-4 lg:mx-8 mt-4 flex items-center justify-between px-4 py-3 rounded-xl border ${
+          <div className={cn(
+            "mx-4 lg:mx-8 mt-4 flex items-center justify-between px-4 py-3 rounded-xl border",
             toast.type === "success"
               ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
               : "bg-red-500/10 border-red-500/20 text-red-400"
-          }`}>
+          )}>
             <span className="flex items-center gap-2 text-sm">
               {toast.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
               {toast.message}
@@ -357,11 +381,12 @@ export default function ProjectDetailPage({
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                  className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors",
                     activeTab === tab.id
                       ? "border-blue-500 text-blue-400"
                       : "border-transparent text-zinc-500 hover:text-zinc-300 hover:border-white/10"
-                  }`}
+                  )}
                 >
                   <tab.icon className="w-4 h-4" />
                   {tab.label}
@@ -378,7 +403,12 @@ export default function ProjectDetailPage({
                     { label: "Status", value: statusConfig.text, icon: Activity },
                     { label: "Created", value: formatDate(project.createdAt), icon: Clock },
                   ].map((stat, i) => (
-                    <div key={i} className="bg-white/[0.02] border border-white/10 rounded-xl p-5 flex items-center gap-4">
+                    <div key={i} className={cn(
+                      componentStyles.card.base,
+                      componentStyles.card.hover,
+                      componentStyles.card.elevated,
+                      "flex items-center gap-4 p-5"
+                    )}>
                       <div className="w-10 h-10 rounded-lg bg-white/[0.04] flex items-center justify-center border border-white/5">
                         <stat.icon className="w-5 h-5 text-zinc-400" />
                       </div>
@@ -391,22 +421,23 @@ export default function ProjectDetailPage({
                 </div>
 
                 {project.url && (
-                  <div className="bg-white/[0.02] border border-white/10 rounded-xl p-5">
+                  <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "p-5")}>
                     <h3 className="font-medium text-white mb-3">Live URL</h3>
                     <div className="flex items-center gap-3 flex-wrap">
                       <a
                         href={project.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex-1 min-w-[200px] bg-[#0a0a0a] border border-white/10 rounded-lg px-3 py-2 font-mono text-sm text-zinc-300 truncate hover:border-blue-500/50 transition-colors"
+                        className="flex-1 min-w-[200px] bg-[#030303] border border-white/10 rounded-lg px-3 py-2 font-mono text-sm text-zinc-300 truncate hover:border-blue-500/50 transition-colors"
                       >
                         {project.url}
                       </a>
                       <button
                         onClick={() => handleCopy(project.url!, "URL")}
-                        className={`flex items-center gap-1.5 px-4 py-2 bg-white/10 hover:bg-white/15 border border-white/10 rounded-lg text-sm font-medium transition-colors ${
+                        className={cn(
+                          "flex items-center gap-1.5 px-4 py-2 bg-white/10 hover:bg-white/15 border border-white/10 rounded-lg text-sm font-medium transition-colors",
                           copied === "URL" ? "bg-emerald-500/20 border-emerald-500 text-emerald-400" : ""
-                        }`}
+                        )}
                       >
                         {copied === "URL" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                         {copied === "URL" ? "Copied" : "Copy"}
@@ -416,16 +447,19 @@ export default function ProjectDetailPage({
                 )}
 
                 {project.deployments && project.deployments.length > 0 && (
-                  <div className="bg-white/[0.02] border border-white/10 rounded-xl p-5">
+                  <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "p-5")}>
                     <h3 className="font-medium text-white mb-3">Latest Deployment</h3>
                     <div className="space-y-3">
                       {project.deployments.slice(0, 3).map((deployment) => {
                         const depStatus = getStatusConfig(deployment.status);
                         return (
-                          <div key={deployment.id} className="flex items-center justify-between p-3 bg-[#0a0a0a] rounded-lg border border-white/5">
+                          <div key={deployment.id} className="flex items-center justify-between p-3 bg-[#030303] rounded-lg border border-white/5">
                             <div className="flex items-center gap-3">
-                              <span className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-medium border ${depStatus.styles}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${depStatus.dot}`} />
+                              <span className={cn(
+                                "flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-medium border",
+                                depStatus.styles
+                              )}>
+                                <span className={cn("w-1.5 h-1.5 rounded-full", depStatus.dot)} />
                                 {depStatus.text}
                               </span>
                               <span className="font-mono text-xs text-zinc-400">{deployment.id.slice(0, 8)}</span>
@@ -433,7 +467,7 @@ export default function ProjectDetailPage({
                             </div>
                             {deployment.liveUrl && (
                               <a href={deployment.liveUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-400 hover:text-blue-300">
-                                View
+                                Visit
                               </a>
                             )}
                           </div>
@@ -457,7 +491,7 @@ export default function ProjectDetailPage({
 
             {activeTab === "deployments" && (
               <div className="animate-in fade-in duration-200">
-                <div className="bg-white/[0.02] border border-white/10 rounded-xl overflow-hidden">
+                <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "overflow-hidden")}>
                   <div className="p-4 border-b border-white/10">
                     <h3 className="font-medium text-white">Deployment History</h3>
                   </div>
@@ -468,8 +502,11 @@ export default function ProjectDetailPage({
                         return (
                           <div key={deployment.id} className="p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                             <div className="flex items-center gap-3 min-w-0">
-                              <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border ${depStatus.styles} shrink-0`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${depStatus.dot}`} />
+                              <span className={cn(
+                                "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border shrink-0",
+                                depStatus.styles
+                              )}>
+                                <span className={cn("w-1.5 h-1.5 rounded-full", depStatus.dot)} />
                                 {depStatus.text}
                               </span>
                               <div>
@@ -483,24 +520,35 @@ export default function ProjectDetailPage({
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              {deployment.liveUrl && (
-                                <a
-                                  href={deployment.liveUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
-                                >
-                                  <Globe className="w-3.5 h-3.5" />
-                                  Visit
-                                </a>
-                              )}
+{deployment.liveUrl && (
+                              <a
+                                href={`/deployments/${deployment.id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+                              >
+                                <Globe className="w-3.5 h-3.5" />
+                                Visit
+                              </a>
+                            )}
+                            {deployment.status === "RUNNING" && (
+                              <a
+                                href={`/deployments/${deployment.id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center gap-1.5 text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
+                              >
+                                <Globe className="w-3.5 h-3.5" />
+                                Open
+                              </a>
+                            )}
                               {deployment.logs && (
                                 <button className="flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors">
                                   <Terminal className="w-3.5 h-3.5" />
                                   Logs
                                 </button>
                               )}
-                              {deployment.status === "DEPLOYED" && (
+                              {deployment.status === "RUNNING" && (
                                 <>
                                   <button
                                     onClick={() => confirmAction(deployment.id, "stop")}
@@ -510,6 +558,28 @@ export default function ProjectDetailPage({
                                   >
                                     <Square className="w-3.5 h-3.5" />
                                     Stop
+                                  </button>
+                                  <button
+                                    onClick={() => confirmAction(deployment.id, "restart")}
+                                    disabled={actionLoading === deployment.id}
+                                    className="flex items-center gap-1.5 text-sm font-medium text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
+                                    title="Restart deployment"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5" />
+                                    Restart
+                                  </button>
+                                </>
+                              )}
+                              {deployment.status === "STOPPED" && (
+                                <>
+                                  <button
+                                    onClick={() => confirmAction(deployment.id, "start")}
+                                    disabled={actionLoading === deployment.id}
+                                    className="flex items-center gap-1.5 text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors disabled:opacity-50"
+                                    title="Start deployment"
+                                  >
+                                    <Play className="w-3.5 h-3.5" />
+                                    Start
                                   </button>
                                   <button
                                     onClick={() => confirmAction(deployment.id, "restart")}
