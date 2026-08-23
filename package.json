@@ -10,6 +10,11 @@
     "dev": "npm run dev --workspaces"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.3"
+    "@prisma/client": "^6.19.3",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^4.0.1",
+    "@types/fs-extra": "^11.0.4"
   }
 }

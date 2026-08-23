@@ -7,13 +7,12 @@ import { Menu, X, ArrowRight } from "lucide-react";
 import { CloudScaleLogo } from "@/components/ui/CloudScaleLogo";
 import { cn } from "@/lib/design-system";
 
-const GITHUB_URL = "https://github.com/JainMehul05/cloudscale-test-app";
-
 const NAV_LINKS = [
-  { label: "Product", href: "#product" },
   { label: "Features", href: "#features" },
-  { label: "Documentation", href: "#docs" },
-  { label: "GitHub", href: GITHUB_URL, external: true },
+  { label: "Architecture", href: "#architecture" },
+  { label: "Technology", href: "#technology" },
+  { label: "Security", href: "#security" },
+  { label: "Changelog", href: "/changelog" },
 ];
 
 export default function Navbar() {
@@ -31,12 +30,13 @@ export default function Navbar() {
 
   return (
     <>
+      {/* Top Progress Bar */}
       <motion.div
         style={{ scaleX: scrolled ? 1 : 0 }}
         className="
         fixed top-0 left-0 right-0 z-[100]
         h-[2px] origin-left
-        bg-gradient-to-r from-blue-500 via-cyan-400 to-violet-500
+        bg-gradient-to-r from-[#00E5FF] via-[#2563FF] to-[#8B5CF6]
         transition-transform duration-300 ease-out
         "
       />
@@ -52,42 +52,45 @@ export default function Navbar() {
             "rounded-2xl border px-4 py-3",
             "backdrop-blur-xl transition-all duration-300",
             scrolled
-              ? "bg-[#030303]/90 border-white/[0.08] shadow-[0_12px_16px_-4px_rgba(0,0,0,0.5)]"
-              : "bg-[#030303]/60 border-white/[0.04]"
+              ? "bg-[#050505]/95 border-white/[0.08] shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_12px_16px_-4px_rgba(0,0,0,0.5)]"
+              : "bg-[#050505]/60 border-white/[0.04]"
           )}
         >
+          {/* Logo */}
           <Link href="/" className="flex items-center gap-3 text-white" aria-label="CloudScale Home">
             <motion.div
-              whileHover={{ scale: 1.08, rotate: 6 }}
+              whileHover={{ scale: 1.1, rotate: 8 }}
               transition={{ type: "spring", stiffness: 300 }}
-              className="h-9 w-9 rounded-xl overflow-hidden"
+              className="h-10 w-10 rounded-xl overflow-hidden"
             >
-              <CloudScaleLogo size="md" />
+              <CloudScaleLogo size="lg" />
             </motion.div>
-            <span className="text-lg font-bold tracking-tight hidden sm:block">CloudScale</span>
+            <span className="text-xl font-bold tracking-tight hidden sm:block bg-gradient-to-r from-white via-zinc-300 to-[#00E5FF] bg-clip-text text-transparent">
+              CloudScale
+            </span>
           </Link>
 
+          {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-1" aria-label="Main navigation">
             {NAV_LINKS.map((link) => (
-              <a
+              <Link
                 key={link.label}
                 href={link.href}
-                target={link.external ? "_blank" : undefined}
-                rel={link.external ? "noopener noreferrer" : undefined}
-                className="px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:text-white rounded-lg hover:bg-white/[0.03]"
+                className="relative px-3 py-2 text-sm font-medium text-zinc-400 transition-all duration-200 hover:text-white rounded-lg hover:bg-white/[0.03] before:absolute before:bottom-0 before:left-1/2 before:h-[2px] before:w-0 before:bg-gradient-to-r before:from-[#00E5FF] before:to-[#8B5CF6] before:-translate-x-1/2 before:transition-all before:duration-300 hover:before:w-full"
               >
                 {link.label}
-              </a>
+              </Link>
             ))}
           </nav>
 
+          {/* Desktop Actions */}
           <div className="hidden md:flex items-center gap-2">
             <div className="w-px h-6 bg-white/[0.08] mx-2" />
             <Link
               href="/auth/signin"
-              className="px-3 py-2 text-sm text-zinc-300 hover:text-white transition-colors rounded-lg hover:bg-white/[0.03]"
+              className="px-3 py-2 text-sm text-zinc-300 hover:text-white transition-all duration-200 rounded-lg hover:bg-white/[0.03]"
             >
-              Login
+              Sign In
             </Link>
             <motion.a
               href="/auth/signin"
@@ -95,18 +98,19 @@ export default function Navbar() {
               whileTap={{ scale: 0.98 }}
               className={cn(
                 "group flex items-center gap-2",
-                "rounded-xl bg-gradient-to-b from-blue-500 to-cyan-600",
-                "hover:from-blue-400 hover:to-cyan-500",
+                "rounded-xl bg-gradient-to-b from-[#00E5FF] to-[#2563FF]",
+                "hover:from-[#00B8D4] hover:to-[#1E40AF]",
                 "px-5 py-2.5 text-sm font-semibold text-white",
-                "shadow-[0_0_24px_-6px_rgba(59,130,246,0.4)]",
+                "shadow-[0_0_24px_-6px_rgba(0,229,255,0.4)]",
                 "transition-all duration-200"
               )}
             >
-              Get Started
+              Launch CloudScale
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </motion.a>
           </div>
 
+          {/* Mobile Menu Button */}
           <button
             onClick={() => setOpen(!open)}
             className="md:hidden text-zinc-300 hover:text-white p-2 rounded-xl hover:bg-white/[0.03] transition-colors"
@@ -117,6 +121,7 @@ export default function Navbar() {
           </button>
         </motion.div>
 
+        {/* Mobile Menu */}
         <AnimatePresence>
           {open && (
             <motion.div
@@ -125,18 +130,16 @@ export default function Navbar() {
               exit={{ opacity: 0, height: 0 }}
               className="md:hidden overflow-hidden"
             >
-              <div className="mt-2 rounded-2xl border border-white/[0.08] bg-[#030303]/95 p-4 backdrop-blur-xl">
+              <div className="mt-2 rounded-2xl border border-white/[0.08] bg-[#050505]/95 p-4 backdrop-blur-xl">
                 {NAV_LINKS.map((link) => (
-                  <a
+                  <Link
                     key={link.label}
                     href={link.href}
                     onClick={() => setOpen(false)}
-                    target={link.external ? "_blank" : undefined}
-                    rel={link.external ? "noopener noreferrer" : undefined}
-                    className="block rounded-xl px-3 py-3 text-sm text-zinc-300 hover:bg-white/[0.03] hover:text-white transition-colors"
+                    className="block rounded-xl px-3 py-3 text-sm text-zinc-300 hover:bg-white/[0.03] hover:text-white transition-all duration-200"
                   >
                     {link.label}
-                  </a>
+                  </Link>
                 ))}
                 <div className="mt-3 border-t border-white/[0.08] pt-3 space-y-3">
                   <Link
@@ -144,14 +147,14 @@ export default function Navbar() {
                     onClick={() => setOpen(false)}
                     className="block text-center py-3 text-zinc-300 hover:text-white transition-colors rounded-xl hover:bg-white/[0.03]"
                   >
-                    Login
+                    Sign In
                   </Link>
                   <Link
                     href="/auth/signin"
                     onClick={() => setOpen(false)}
-                    className="block rounded-xl bg-gradient-to-b from-blue-500 to-cyan-600 py-3 text-center text-sm font-semibold text-white"
+                    className="block rounded-xl bg-gradient-to-b from-[#00E5FF] to-[#2563FF] py-3 text-center text-sm font-semibold text-white"
                   >
-                    Get Started
+                    Launch CloudScale
                   </Link>
                 </div>
               </div>

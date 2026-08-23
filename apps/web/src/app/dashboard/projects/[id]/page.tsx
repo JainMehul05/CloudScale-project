@@ -1,39 +1,41 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { motion } from "framer-motion";
 import {
   ArrowLeft,
   Rocket,
   GitBranch,
   Clock,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  Terminal,
-  Activity,
   Globe,
-  Key,
-  Container,
-  Copy,
-  Check,
-  RotateCcw,
-  Square,
   Trash2,
+  Settings,
+  ExternalLink,
+  Key,
+  CheckCircle2,
+  Loader2,
   AlertTriangle,
   X,
-  Play,
+  Container,
 } from "lucide-react";
+import { DashboardLayout } from "@/components/cloudscale/DashboardLayout";
+import { DeploymentTimelineFromStatus } from "@/components/cloudscale/DeploymentTimeline";
+import { StatusBadge, DeploymentStatus } from "@/components/cloudscale/StatusBadge";
+import { DeploymentCard } from "@/components/cloudscale/DeploymentCard";
+import { StatsCard, createStatData } from "@/components/cloudscale/StatsCard";
 import { EnvironmentVariableManager } from "@/components/EnvironmentVariableManager";
-import { CloudScaleLogo } from "@/components/ui/CloudScaleLogo";
-import { cn, getStatusStyles, componentStyles } from "@/lib/design-system";
-
-type DeploymentStatus = "QUEUED" | "VALIDATING" | "CLONING" | "DETECTING" | "BUILDING" | "STARTING" | "RUNNING" | "FAILED" | "STOPPED";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { cn, componentStyles } from "@/lib/design-system";
 
 interface Deployment {
   id: string;
   status: DeploymentStatus;
   createdAt: string;
   liveUrl?: string | null;
+  deploymentUrl?: string | null;
   containerId?: string | null;
   containerName?: string | null;
   containerPort?: number | null;
@@ -44,7 +46,7 @@ interface Deployment {
 interface Project {
   id: string;
   name: string;
-  repository: string;
+  githubRepo: string;
   branch: string;
   framework: string;
   status: DeploymentStatus;
@@ -55,102 +57,129 @@ interface Project {
   deployments?: Deployment[];
 }
 
-const getStatusConfig = (status: DeploymentStatus) => {
-  const styles = getStatusStyles(status.toLowerCase() as keyof typeof import("@/lib/design-system").colors.status);
-  const icons = {
-    QUEUED: <Clock className="w-3.5 h-3.5" />,
-    VALIDATING: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
-    CLONING: <GitBranch className="w-3.5 h-3.5 animate-spin" />,
-    DETECTING: <Activity className="w-3.5 h-3.5 animate-spin" />,
-    BUILDING: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
-    STARTING: <Rocket className="w-3.5 h-3.5 animate-spin" />,
-    RUNNING: <CheckCircle2 className="w-3.5 h-3.5" />,
-    FAILED: <XCircle className="w-3.5 h-3.5" />,
-    STOPPED: <Square className="w-3.5 h-3.5" />,
-  };
-  const texts = {
-    QUEUED: "Queued",
-    VALIDATING: "Validating",
-    CLONING: "Cloning",
-    DETECTING: "Detecting",
-    BUILDING: "Building",
-    STARTING: "Starting",
-    RUNNING: "Running",
-    FAILED: "Failed",
-    STOPPED: "Stopped",
-  };
-  return {
-    icon: icons[status],
-    text: texts[status],
-    styles: `${styles.bg.replace("rgba(", "bg-").replace(")", "")} ${styles.text.replace("text-", "")} ${styles.border.replace("rgba(", "border-").replace(")", "")}`,
-    dot: styles.dot.replace("bg-", "bg-"),
-  };
-};
-
-const formatDate = (dateString: string) => {
+function formatRelativeTime(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();
   const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
-
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
-};
+}
 
-const formatFullDate = (dateString: string) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString() + " " + date.toLocaleTimeString();
-};
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <Skeleton className="h-10 w-64 rounded" />
+      <Skeleton className="h-6 w-48 rounded" />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24 w-full rounded-2xl" />)}
+      </div>
+      <Skeleton className="h-40 w-full rounded-2xl" />
+      <Skeleton className="h-96 w-full rounded-2xl" />
+    </div>
+  );
+}
+
+function ErrorState({ message, onBack }: { message: string; onBack: () => void }) {
+  return (
+    <div className={cn(componentStyles.card.base, componentStyles.card.elevated, "p-12 text-center")}>
+      <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+      <h2 className="text-xl font-semibold text-white mb-2">Project Not Found</h2>
+      <p className="text-zinc-500 mb-6">{message}</p>
+      <Button variant="ghost" onClick={onBack} className="gap-2">
+        <ArrowLeft className="w-4 h-4" />
+        Back to Dashboard
+      </Button>
+    </div>
+  );
+}
+
+function EmptyDeploymentsState({ onDeploy }: { onDeploy: () => void }) {
+  return (
+    <div className={cn(componentStyles.card.base, componentStyles.card.elevated, "p-12 text-center")}>
+      <Rocket className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
+      <h3 className="text-lg font-medium text-white mb-2">No deployments yet</h3>
+      <p className="text-sm text-zinc-500 mb-6 max-w-sm mx-auto">
+        Your deployment history will appear here once you deploy this project.
+      </p>
+      <Button onClick={onDeploy} className="gap-2">
+        <Rocket className="w-4 h-4" />
+        Deploy Now
+      </Button>
+    </div>
+  );
+}
 
 export default function ProjectDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "env" | "deployments">("overview");
-  const [copied, setCopied] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [isDeploying, setIsDeploying] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
 
-  const showToast = (message: string, type: "success" | "error") => {
+  const showToast = useCallback((message: string, type: "success" | "error") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
-  };
+  }, []);
 
-  useEffect(() => {
-    const fetchProject = async () => {
-      try {
-        setIsLoading(true);
-        const { id: projectId } = await params;
-        const res = await fetch(`/api/projects/${projectId}`, { cache: "no-store" });
+  const fetchProject = useCallback(async () => {
+    if (!mountedRef.current) return;
 
-        if (!res.ok) {
-          if (res.status === 404) throw new Error("Project not found");
-          throw new Error("Failed to fetch project");
-        }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
-        const data = await res.json();
+    try {
+      if (mountedRef.current) setIsLoading(true);
+      const { id: projectId } = await params;
+      const res = await fetch(`/api/projects/${projectId}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) throw new Error("Project not found");
+        throw new Error("Failed to fetch project");
+      }
+
+      const data = await res.json();
+      if (mountedRef.current && !controller.signal.aborted) {
         setProject(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
-      } finally {
+        setError(null);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      if (!mountedRef.current) return;
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      if (mountedRef.current && abortControllerRef.current === controller) {
         setIsLoading(false);
       }
-    };
-
-    fetchProject();
+    }
   }, [params]);
 
-  const handleCopy = async (text: string, label: string) => {
-    await navigator.clipboard.writeText(text);
-    setCopied(label);
-    setTimeout(() => setCopied(null), 2000);
-  };
+  useEffect(() => {
+    mountedRef.current = true;
+    const init = () => {
+      fetchProject();
+    };
+    setTimeout(init, 0);
+
+    return () => {
+      mountedRef.current = false;
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+    };
+  }, [fetchProject]);
 
   const handleDeploy = async () => {
     setIsDeploying(true);
@@ -185,7 +214,6 @@ export default function ProjectDetailPage({
     deploymentId: string,
     action: "stop" | "restart" | "delete" | "start"
   ) => {
-    setActionLoading(deploymentId);
     try {
       const endpoint =
         action === "delete"
@@ -202,27 +230,15 @@ export default function ProjectDetailPage({
 
       showToast(`Deployment ${action} successful`, "success");
 
-      if ((action === "restart" || action === "start") && data.newDeploymentId) {
-        // Refresh project to show new deployment
-        const { id: projectId } = await params;
-        const projectRes = await fetch(`/api/projects/${projectId}`, { cache: "no-store" });
-        if (projectRes.ok) {
-          const projectData = await projectRes.json();
-          setProject(projectData);
-        }
-      } else if (action === "delete" || action === "stop") {
-        // Refresh project to update deployment list
-        const { id: projectId } = await params;
-        const projectRes = await fetch(`/api/projects/${projectId}`, { cache: "no-store" });
-        if (projectRes.ok) {
-          const projectData = await projectRes.json();
-          setProject(projectData);
-        }
+      // Refresh project to update deployment list
+      const { id: projectId } = await params;
+      const projectRes = await fetch(`/api/projects/${projectId}`, { cache: "no-store" });
+      if (projectRes.ok) {
+        const projectData = await projectRes.json();
+        setProject(projectData);
       }
     } catch (err) {
       showToast(err instanceof Error ? err.message : `Failed to ${action} deployment`, "error");
-    } finally {
-      setActionLoading(null);
     }
   };
 
@@ -240,385 +256,370 @@ export default function ProjectDetailPage({
 
   if (isLoading) {
     return (
-      <div className="flex h-screen w-full bg-[#030303] text-zinc-300">
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
-        </div>
-      </div>
+      <DashboardLayout title="Project" description="Loading project details...">
+        <LoadingSkeleton />
+      </DashboardLayout>
     );
   }
 
   if (error || !project) {
     return (
-      <div className="flex h-screen w-full bg-[#030303] text-zinc-300">
-        <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-          <XCircle className="w-12 h-12 text-red-400 mb-4" />
-          <h2 className="text-xl font-semibold text-white mb-2">Project Not Found</h2>
-          <p className="text-zinc-500 mb-6">{error || "Project does not exist"}</p>
-          <a
-            href="/dashboard"
-            className={cn(
-              "flex items-center gap-2 bg-white text-black hover:bg-zinc-200 px-4 py-2 rounded-lg text-sm font-semibold",
-              componentStyles.button.secondary
-            )}
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Dashboard
-          </a>
-        </div>
-      </div>
+      <DashboardLayout title="Project Not Found" description="The requested project does not exist.">
+        <ErrorState message={error || "Project does not exist"} onBack={() => router.push("/dashboard")} />
+      </DashboardLayout>
     );
   }
 
-  const statusConfig = getStatusConfig(project.status);
+  const latestDeployment = project.deployments?.[0];
+  const isRunning = latestDeployment?.status === "RUNNING";
 
   return (
-    <div className="flex h-screen w-full bg-[#030303] text-zinc-300 font-sans overflow-hidden">
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="flex h-16 shrink-0 items-center justify-between px-4 lg:px-8 border-b border-white/10 bg-[#030303]/80 backdrop-blur-md z-10">
-          <div className="flex items-center gap-4">
-            <a
-              href="/dashboard"
-              className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
-              <span className="font-medium">Projects</span>
-            </a>
-            <div className="flex items-center gap-2 px-3 py-1 bg-white/[0.03] border border-white/10 rounded-lg">
-              <CloudScaleLogo size="sm" className="text-white" />
-              <span className="text-sm font-medium text-white">{project.name}</span>
-              <span className={cn(
-                "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium border",
-                statusConfig.styles
-              )}>
-                <span className={cn("w-1.5 h-1.5 rounded-full", statusConfig.dot)} />
-                {statusConfig.text}
-              </span>
-            </div>
-          </div>
+    <DashboardLayout
+      title={project.name}
+      description={`${project.githubRepo} • ${project.branch} • ${project.framework}`}
+    >
+      <div className="space-y-6 max-w-7xl mx-auto">
+        {/* Toast */}
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={cn(
+              "fixed top-4 right-4 z-50 flex items-center justify-between px-4 py-3 rounded-xl border",
+              "animate-in fade-in duration-200",
+              toast.type === "success"
+                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                : "bg-red-500/10 border-red-500/20 text-red-400"
+            )}
+          >
+            <span className="flex items-center gap-2 text-sm">
+              {toast.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+              {toast.message}
+            </span>
+            <button onClick={() => setToast(null)} className="ml-4 p-1 hover:bg-white/10 rounded">
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
 
-          <div className="flex items-center gap-3">
-  <button
-    onClick={handleDeploy}
-    disabled={isDeploying}
-    className={cn(
-      "flex items-center gap-2 px-5 py-2 rounded-lg font-medium transition-all",
-      componentStyles.button.primary,
-      "disabled:opacity-50 disabled:cursor-not-allowed"
-    )}
-  >
-    {isDeploying ? (
-      <>
-        <Loader2 className="w-4 h-4 animate-spin" />
-        Deploying...
-      </>
-    ) : (
-      <>
-        <Rocket className="w-4 h-4" />
-        Deploy
-      </>
-    )}
-  </button>
+        {/* Section 1: Project Header */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className={cn(componentStyles.card.base, componentStyles.card.elevated, "overflow-hidden")}
+        >
+          <div className="p-5 border-b border-white/10">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h1 className="text-2xl font-semibold text-white truncate">{project.name}</h1>
+                  <StatusBadge status={project.status} />
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-zinc-500">
+                  <span className="flex items-center gap-1.5">
+                    <GitBranch className="w-4 h-4" />
+                    <span className="font-mono bg-white/[0.03] px-2 py-1 rounded border border-white/5">{project.githubRepo}</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <GitBranch className="w-4 h-4" />
+                    <span className="px-2 py-1 rounded border border-white/5 bg-white/[0.03] font-mono text-xs">{project.branch}</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <Container className="w-4 h-4" />
+                    <span className="font-mono">{project.framework}</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="w-4 h-4" />
+                    Created {formatRelativeTime(project.createdAt)}
+                  </span>
+                </div>
+              </div>
 
-{project.url && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleDeploy}
+                  disabled={isDeploying}
+                  className="gap-2"
+                >
+                  {isDeploying ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Deploying...
+                    </>
+                  ) : (
+                    <>
+                      <Rocket className="w-4 h-4" />
+                      Deploy
+                    </>
+                  )}
+                </Button>
+                {project.url && (
                   <a
                     href={project.url}
                     target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
                   >
                     <Globe className="w-4 h-4" />
                     Visit
                   </a>
                 )}
-                {project.deployments && project.deployments[0]?.status === "RUNNING" && (
+                {isRunning && latestDeployment && (
                   <a
-                    href={`/deployments/${project.deployments[0].id}`}
+                    href={`/dashboard/deployments/${latestDeployment.id}`}
                     target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-2 text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
                   >
-                    <Globe className="w-4 h-4" />
+                    <ExternalLink className="w-4 h-4" />
                     Open App
                   </a>
                 )}
-</div>
-        </header>
-
-        {toast && (
-          <div className={cn(
-            "mx-4 lg:mx-8 mt-4 flex items-center justify-between px-4 py-3 rounded-xl border",
-            toast.type === "success"
-              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-              : "bg-red-500/10 border-red-500/20 text-red-400"
-          )}>
-            <span className="flex items-center gap-2 text-sm">
-              {toast.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
-              {toast.message}
-            </span>
-            <button onClick={() => setToast(null)} className="p-1 hover:bg-white/10 rounded">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        <main className="flex-1 overflow-y-auto p-4 lg:p-8">
-          <div className="max-w-6xl mx-auto space-y-6">
-            <div className="flex items-center gap-4 border-b border-white/10 pb-4">
-              <CloudScaleLogo size="lg" className="text-white" />
-              <div>
-                <h1 className="text-2xl font-semibold text-white">{project.name}</h1>
-                <p className="text-sm text-zinc-500">{project.repository}</p>
-              </div>
-            </div>
-
-            <div className="flex gap-2 border-b border-white/10">
-              {[
-                { id: "overview", label: "Overview", icon: Container },
-                { id: "env", label: "Environment", icon: Key },
-                { id: "deployments", label: "Deployments", icon: Rocket },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as typeof activeTab)}
+                <Link
+                  href={`/dashboard/projects/${project.id}/settings`}
                   className={cn(
-                    "flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors",
-                    activeTab === tab.id
-                      ? "border-blue-500 text-blue-400"
-                      : "border-transparent text-zinc-500 hover:text-zinc-300 hover:border-white/10"
+                    "inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors",
+                    "rounded-lg hover:bg-white/5"
                   )}
                 >
-                  <tab.icon className="w-4 h-4" />
-                  {tab.label}
-                </button>
-              ))}
+                  <Settings className="w-4 h-4" />
+                  Settings
+                </Link>
+              </div>
             </div>
+          </div>
 
-            {activeTab === "overview" && (
-              <div className="space-y-6 animate-in fade-in duration-200">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {[
-                    { label: "Framework", value: project.framework, icon: Container },
-                    { label: "Branch", value: project.branch, icon: GitBranch },
-                    { label: "Status", value: statusConfig.text, icon: Activity },
-                    { label: "Created", value: formatDate(project.createdAt), icon: Clock },
-                  ].map((stat, i) => (
-                    <div key={i} className={cn(
-                      componentStyles.card.base,
-                      componentStyles.card.hover,
-                      componentStyles.card.elevated,
-                      "flex items-center gap-4 p-5"
-                    )}>
-                      <div className="w-10 h-10 rounded-lg bg-white/[0.04] flex items-center justify-center border border-white/5">
-                        <stat.icon className="w-5 h-5 text-zinc-400" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-medium text-zinc-500">{stat.label}</p>
-                        <p className="font-mono text-sm text-white">{stat.value}</p>
-                      </div>
-                    </div>
+          {/* Latest Deployment Quick View */}
+          {latestDeployment && (
+            <div className="px-5 py-4 border-b border-white/10 bg-white/[0.02]">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <StatusBadge status={latestDeployment.status} />
+                  <div>
+                    <p className="text-sm font-medium text-white">Latest Deployment</p>
+                    <p className="text-xs text-zinc-500 font-mono">#{latestDeployment.id.slice(0, 8)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-zinc-500">
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    {formatRelativeTime(latestDeployment.createdAt)}
+                  </span>
+                  {latestDeployment.liveUrl && (
+                    <a
+                      href={latestDeployment.liveUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-cyan-400 hover:text-cyan-300"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      Live
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </motion.div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main Content: 2/3 width */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Section 2: Project Overview Stats */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
+            >
+              {[
+                createStatData("Deployments", project.deployments?.length || 0, { variant: "deployments" }),
+                createStatData("Running", project.deployments?.filter(d => d.status === "RUNNING").length || 0, { variant: "running" }),
+                createStatData("Failed", project.deployments?.filter(d => d.status === "FAILED").length || 0, { variant: "failed" }),
+                createStatData("Total", project.deployments?.length || 0, { variant: "total" }),
+              ].map((stat) => (
+                <StatsCard key={stat.label} stats={[stat]} columns={1} gap="md" variant="default" />
+              ))}
+            </motion.div>
+
+            {/* Section 3: Latest Deployment with Timeline */}
+            {latestDeployment && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.1 }}
+                className={cn(componentStyles.card.base, componentStyles.card.elevated, "overflow-hidden")}
+              >
+                <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                  <h3 className="font-semibold text-white flex items-center gap-2">
+                    <Rocket className="w-5 h-5 text-cyan-400" />
+                    Latest Deployment
+                  </h3>
+                  <a
+                    href={`/dashboard/deployments/${latestDeployment.id}`}
+                    className="text-sm text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+                  >
+                    View Details
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+                <div className="p-5">
+                  <DeploymentTimelineFromStatus
+                    status={latestDeployment.status}
+                    startedAt={latestDeployment.createdAt}
+                    completedAt={latestDeployment.status === "RUNNING" ? latestDeployment.createdAt : undefined}
+                  />
+                </div>
+              </motion.div>
+            )}
+
+            {/* Section 4: Deployment History */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.2 }}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold tracking-tight text-white">Deployment History</h3>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleDeploy}
+                  disabled={isDeploying}
+                  className="gap-2"
+                >
+                  {isDeploying ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Deploying...
+                    </>
+                  ) : (
+                    <>
+                      <Rocket className="w-4 h-4" />
+                      New Deployment
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {project.deployments && project.deployments.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4" role="list" aria-label="Deployments">
+                  {project.deployments.map((deployment) => (
+                    <DeploymentCard
+                      key={deployment.id}
+                      deployment={{
+                        id: deployment.id,
+                        projectId: project.id,
+                        projectName: project.name,
+                        status: deployment.status,
+                        createdAt: deployment.createdAt,
+                        startedAt: null,
+                        completedAt: null,
+                        failedAt: null,
+                        liveUrl: deployment.liveUrl,
+                        deploymentUrl: deployment.deploymentUrl,
+                        containerId: deployment.containerId,
+                        containerName: deployment.containerName,
+                        containerPort: deployment.containerPort,
+                        imageName: deployment.imageName,
+                        logs: deployment.logs,
+                      }}
+                      variant="default"
+                      showActions
+                      onViewLogs={(id) => router.push(`/dashboard/deployments/${id}`)}
+                      onRetry={(id) => confirmAction(id, "restart")}
+                      onStop={(id) => confirmAction(id, "stop")}
+                      onOpenLive={(url) => window.open(url, "_blank")}
+                    />
                   ))}
                 </div>
+              ) : (
+                <EmptyDeploymentsState onDeploy={handleDeploy} />
+              )}
+            </motion.div>
+          </div>
 
-                {project.url && (
-                  <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "p-5")}>
-                    <h3 className="font-medium text-white mb-3">Live URL</h3>
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <a
-                        href={project.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex-1 min-w-[200px] bg-[#030303] border border-white/10 rounded-lg px-3 py-2 font-mono text-sm text-zinc-300 truncate hover:border-blue-500/50 transition-colors"
-                      >
-                        {project.url}
-                      </a>
-                      <button
-                        onClick={() => handleCopy(project.url!, "URL")}
-                        className={cn(
-                          "flex items-center gap-1.5 px-4 py-2 bg-white/10 hover:bg-white/15 border border-white/10 rounded-lg text-sm font-medium transition-colors",
-                          copied === "URL" ? "bg-emerald-500/20 border-emerald-500 text-emerald-400" : ""
-                        )}
-                      >
-                        {copied === "URL" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                        {copied === "URL" ? "Copied" : "Copy"}
-                      </button>
-                    </div>
-                  </div>
-                )}
+          {/* Sidebar: 1/3 width - Environment Variables + Project Info */}
+          <div className="space-y-6">
+            {/* Environment Variables */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.15 }}
+              className={cn(componentStyles.card.base, componentStyles.card.elevated, "overflow-hidden")}
+            >
+              <EnvironmentVariableManager
+                projectId={project.id}
+              />
+            </motion.div>
 
-                {project.deployments && project.deployments.length > 0 && (
-                  <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "p-5")}>
-                    <h3 className="font-medium text-white mb-3">Latest Deployment</h3>
-                    <div className="space-y-3">
-                      {project.deployments.slice(0, 3).map((deployment) => {
-                        const depStatus = getStatusConfig(deployment.status);
-                        return (
-                          <div key={deployment.id} className="flex items-center justify-between p-3 bg-[#030303] rounded-lg border border-white/5">
-                            <div className="flex items-center gap-3">
-                              <span className={cn(
-                                "flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-medium border",
-                                depStatus.styles
-                              )}>
-                                <span className={cn("w-1.5 h-1.5 rounded-full", depStatus.dot)} />
-                                {depStatus.text}
-                              </span>
-                              <span className="font-mono text-xs text-zinc-400">{deployment.id.slice(0, 8)}</span>
-                              <span className="text-xs text-zinc-500">{formatDate(deployment.createdAt)}</span>
-                            </div>
-                            {deployment.liveUrl && (
-                              <a href={deployment.liveUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-400 hover:text-blue-300">
-                                Visit
-                              </a>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+            {/* Project Information */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.2 }}
+              className={cn(componentStyles.card.base, componentStyles.card.elevated, "overflow-hidden")}
+            >
+              <div className="p-5 border-b border-white/10">
+                <h3 className="font-semibold text-white flex items-center gap-2">
+                  <Key className="w-5 h-5 text-violet-400" />
+                  Project Information
+                </h3>
               </div>
-            )}
-
-            {activeTab === "env" && (
-              <div className="animate-in fade-in duration-200">
-                <EnvironmentVariableManager
-                  projectId={project.id}
-                  initialEnvVars={[]}
-                  onEnvVarsChange={() => {}}
-                />
-              </div>
-            )}
-
-            {activeTab === "deployments" && (
-              <div className="animate-in fade-in duration-200">
-                <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "overflow-hidden")}>
-                  <div className="p-4 border-b border-white/10">
-                    <h3 className="font-medium text-white">Deployment History</h3>
+              <div className="p-5 space-y-4 divide-y divide-white/5">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-zinc-500">Project ID</p>
+                    <p className="font-mono text-white truncate">{project.id}</p>
                   </div>
-                  <div className="divide-y divide-white/5">
-                    {project.deployments && project.deployments.length > 0 ? (
-                      project.deployments.map((deployment) => {
-                        const depStatus = getStatusConfig(deployment.status);
-                        return (
-                          <div key={deployment.id} className="p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <span className={cn(
-                                "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border shrink-0",
-                                depStatus.styles
-                              )}>
-                                <span className={cn("w-1.5 h-1.5 rounded-full", depStatus.dot)} />
-                                {depStatus.text}
-                              </span>
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <span className="font-mono text-sm text-white">{deployment.id.slice(0, 12)}</span>
-                                  <span className="text-xs text-zinc-500">{formatFullDate(deployment.createdAt)}</span>
-                                </div>
-                                {deployment.containerName && (
-                                  <p className="text-xs text-zinc-500 font-mono">{deployment.containerName}</p>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-{deployment.liveUrl && (
-                              <a
-                                href={`/deployments/${deployment.id}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
-                              >
-                                <Globe className="w-3.5 h-3.5" />
-                                Visit
-                              </a>
-                            )}
-                            {deployment.status === "RUNNING" && (
-                              <a
-                                href={`/deployments/${deployment.id}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex items-center gap-1.5 text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
-                              >
-                                <Globe className="w-3.5 h-3.5" />
-                                Open
-                              </a>
-                            )}
-                              {deployment.logs && (
-                                <button className="flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors">
-                                  <Terminal className="w-3.5 h-3.5" />
-                                  Logs
-                                </button>
-                              )}
-                              {deployment.status === "RUNNING" && (
-                                <>
-                                  <button
-                                    onClick={() => confirmAction(deployment.id, "stop")}
-                                    disabled={actionLoading === deployment.id}
-                                    className="flex items-center gap-1.5 text-sm font-medium text-amber-400 hover:text-amber-300 transition-colors disabled:opacity-50"
-                                    title="Stop deployment"
-                                  >
-                                    <Square className="w-3.5 h-3.5" />
-                                    Stop
-                                  </button>
-                                  <button
-                                    onClick={() => confirmAction(deployment.id, "restart")}
-                                    disabled={actionLoading === deployment.id}
-                                    className="flex items-center gap-1.5 text-sm font-medium text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
-                                    title="Restart deployment"
-                                  >
-                                    <RotateCcw className="w-3.5 h-3.5" />
-                                    Restart
-                                  </button>
-                                </>
-                              )}
-                              {deployment.status === "STOPPED" && (
-                                <>
-                                  <button
-                                    onClick={() => confirmAction(deployment.id, "start")}
-                                    disabled={actionLoading === deployment.id}
-                                    className="flex items-center gap-1.5 text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors disabled:opacity-50"
-                                    title="Start deployment"
-                                  >
-                                    <Play className="w-3.5 h-3.5" />
-                                    Start
-                                  </button>
-                                  <button
-                                    onClick={() => confirmAction(deployment.id, "restart")}
-                                    disabled={actionLoading === deployment.id}
-                                    className="flex items-center gap-1.5 text-sm font-medium text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
-                                    title="Restart deployment"
-                                  >
-                                    <RotateCcw className="w-3.5 h-3.5" />
-                                    Restart
-                                  </button>
-                                </>
-                              )}
-                              <button
-                                onClick={() => confirmAction(deployment.id, "delete")}
-                                disabled={actionLoading === deployment.id}
-                                className="flex items-center gap-1.5 text-sm font-medium text-red-400 hover:text-red-300 transition-colors disabled:opacity-50"
-                                title="Delete deployment"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                Delete
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="p-8 text-center text-zinc-500">
-                        <Rocket className="w-10 h-10 mx-auto mb-3 text-zinc-700" />
-                        <p className="text-sm">No deployments yet</p>
-                        <p className="text-xs text-zinc-600 mt-1">Deployments will appear here after you push code</p>
-                      </div>
-                    )}
+                  <div>
+                    <p className="text-zinc-500">Framework</p>
+                    <p className="font-mono text-white">{project.framework}</p>
+                  </div>
+                  <div>
+                    <p className="text-zinc-500">Branch</p>
+                    <p className="font-mono bg-white/[0.03] px-2 py-1 rounded border border-white/5">{project.branch}</p>
+                  </div>
+                  <div>
+                    <p className="text-zinc-500">Port</p>
+                    <p className="font-mono text-white">{project.deployments?.[0]?.containerPort || "—"}</p>
                   </div>
                 </div>
+
+                <div className="pt-4 border-t border-white/5 space-y-3">
+                  <p className="text-xs text-zinc-500 font-medium uppercase tracking-wider">Repository</p>
+                  <a
+                    href={`https://github.com/${project.githubRepo}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 font-mono text-white hover:text-cyan-400 transition-colors"
+                  >
+                    {project.githubRepo}
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+
+                <div className="pt-4 border-t border-white/5">
+                  <p className="text-xs text-zinc-500 font-medium uppercase tracking-wider mb-2">Danger Zone</p>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => confirmAction(project.id, "delete")}
+                    className="w-full gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete Project
+                  </Button>
+                </div>
               </div>
-            )}
+            </motion.div>
           </div>
-        </main>
+        </div>
       </div>
-    </div>
+    </DashboardLayout>
   );
 }

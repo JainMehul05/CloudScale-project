@@ -20,9 +20,11 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const userId = session.user.id;
     const { id: deploymentId } = await params;
 
-    const deployment = await checkDeploymentOwnership(deploymentId, session.user.id);
+    const deployment = await checkDeploymentOwnership(deploymentId, userId);
+
     if (!deployment) {
       return NextResponse.json({ error: "Deployment not found or access denied" }, { status: 404 });
     }

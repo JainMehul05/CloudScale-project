@@ -3,7 +3,10 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Docker from "dockerode";
 
-const docker = new Docker();
+const dockerHost = process.env.DOCKER_HOST || 'unix:///var/run/docker.sock';
+const docker = new Docker({ socketPath: dockerHost.replace('unix://', '') });
+
+export const dynamic = "force-dynamic";
 
 async function checkDeploymentOwnership(deploymentId: string, userId: string) {
   const deployment = await prisma.deployment.findUnique({

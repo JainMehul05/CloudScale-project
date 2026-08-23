@@ -1,6 +1,7 @@
 require("dotenv").config();
 
-const { Worker } = require('bullmq');
+const { Worker, Queue } = require('bullmq');
+const axios = require('axios');
 const Docker = require('dockerode');
 const { PrismaClient } = require('@prisma/client');
 const simpleGit = require('simple-git');
@@ -8,36 +9,96 @@ const fs = require('fs-extra');
 const path = require('path');
 const tar = require('tar-stream');
 const cron = require('node-cron');
+const Redis = require('ioredis');
 
 const prisma = new PrismaClient();
-const docker = new Docker();
+
+const dockerHost = process.env.DOCKER_HOST || 'unix:///var/run/docker.sock';
+const docker = new Docker({ socketPath: dockerHost.replace('unix://', '') });
+
+const redisHost = process.env.REDIS_HOST || 'localhost';
+const redisPort = parseInt(process.env.REDIS_PORT || '6379', 10);
+
+const redisConnection = {
+  host: redisHost,
+  port: redisPort,
+};
+
+const redis = new Redis({ host: redisHost, port: redisPort, lazyConnect: true });
+redis.connect().catch(() => {});
+
+const deploymentsDir = path.join(__dirname, 'deployments');
+fs.ensureDirSync(deploymentsDir);
+
+const CLEANUP_DAYS = 7;
+const CLEANUP_SCHEDULE = '0 3 * * *';
+
+const DEPLOYMENT_STAGES = {
+  QUEUED: { progress: 0, message: 'Queued, waiting for worker...' },
+  VALIDATING: { progress: 20, message: 'Validating repository URL...' },
+  CLONING: { progress: 35, message: 'Cloning repository...' },
+  DETECTING: { progress: 50, message: 'Detecting framework...' },
+  BUILDING: { progress: 70, message: 'Building Docker image...' },
+  STARTING: { progress: 85, message: 'Starting container...' },
+  HEALTH_CHECK: { progress: 95, message: 'Running health checks...' },
+  RUNNING: { progress: 100, message: 'Deployment running' },
+  FAILED: { progress: -1, message: 'Deployment failed' },
+  STOPPED: { progress: -1, message: 'Deployment stopped' },
+};
 
 function cleanLogs(logs) {
   return String(logs).replace(/\0/g, "");
 }
 
-function publishLog(deploymentId, message) {
-  const Redis = require('ioredis');
-  const redis = new Redis({ host: 'localhost', port: 6379, lazyConnect: true });
-  redis.connect().then(() => {
-    redis.publish(`logs:${deploymentId}`, cleanLogs(message)).catch(() => {});
-    redis.quit().catch(() => {});
-  }).catch(() => {});
+async function publishLog(deploymentId, stage, message, progress = null) {
+  try {
+    const logEntry = {
+      stage,
+      message,
+      progress,
+      timestamp: new Date().toISOString(),
+    };
+    await redis.publish(`logs:${deploymentId}`, JSON.stringify(logEntry));
+    
+    await prisma.deploymentLog.create({
+      data: {
+        deploymentId,
+        stage,
+        message,
+      },
+    });
+  } catch (err) {
+    console.error(`[PublishLog] Failed for ${deploymentId}:`, err.message);
+  }
 }
 
-const redisConnection = {
-  host: 'localhost',
-  port: 6379,
-};
+async function updateDeploymentStatus(deploymentId, status, additionalData = {}) {
+  const updateData = {
+    status,
+    updatedAt: new Date(),
+    ...additionalData,
+  };
 
-// Directory where repositories will be cloned
-const deploymentsDir = path.join(__dirname, 'deployments');
+  if (status === 'VALIDATING' || status === 'CLONING' || status === 'DETECTING' || status === 'BUILDING' || status === 'STARTING' || status === 'HEALTH_CHECK') {
+    if (!additionalData.startedAt) {
+      updateData.startedAt = new Date();
+    }
+  }
 
-fs.ensureDirSync(deploymentsDir);
+  if (status === 'RUNNING' || status === 'STOPPED') {
+    updateData.completedAt = new Date();
+  }
 
-// Cleanup configuration
-const CLEANUP_DAYS = 7;
-const CLEANUP_SCHEDULE = '0 3 * * *';
+  if (status === 'FAILED') {
+    updateData.completedAt = new Date();
+    updateData.failedAt = new Date();
+  }
+
+  await prisma.deployment.update({
+    where: { id: deploymentId },
+    data: updateData,
+  });
+}
 
 async function cleanupOldDeployments() {
   console.log('[Cleanup] Starting deployment cleanup...');
@@ -48,7 +109,7 @@ async function cleanupOldDeployments() {
   try {
     const oldDeployments = await prisma.deployment.findMany({
       where: {
-        status: { in: ['DEPLOYED', 'FAILED'] },
+        status: { in: ['RUNNING', 'FAILED', 'STOPPED'] },
         createdAt: { lt: cutoffDate },
       },
       select: {
@@ -148,12 +209,105 @@ function validateRepoUrl(url) {
   }
 }
 
+function sanitizeEnvVars(envVars) {
+  const sanitized = {};
+  const dangerousKeys = [
+    'PATH', 'HOME', 'USER', 'SHELL', 'LD_PRELOAD', 'LD_LIBRARY_PATH',
+    'DOCKER_', 'KUBERNETES_', 'AWS_', 'GOOGLE_', 'AZURE_',
+    'DATABASE_URL', 'REDIS_URL', 'SECRET', 'PASSWORD', 'TOKEN', 'KEY'
+  ];
+  
+  for (const [key, value] of Object.entries(envVars)) {
+    if (typeof key !== 'string' || typeof value !== 'string') continue;
+    
+    const upperKey = key.toUpperCase();
+    const isDangerous = dangerousKeys.some(dk => upperKey.includes(dk));
+    
+    if (isDangerous) {
+      console.warn(`[Security] Blocked potentially dangerous env var: ${key}`);
+      continue;
+    }
+    
+    if (key.length > 100 || value.length > 5000) {
+      console.warn(`[Security] Env var too long, skipping: ${key}`);
+      continue;
+    }
+    
+    sanitized[key] = value;
+  }
+  
+  return sanitized;
+}
+
 function checkDockerfileExists(dir) {
   const dockerfilePath = path.join(dir, 'Dockerfile');
   if (!fs.existsSync(dockerfilePath)) {
     throw new Error('Dockerfile not found at repository root. A Dockerfile is required for deployment.');
   }
   return true;
+}
+
+function getModelConfig(modelName) {
+  const models = {
+    glm52: {
+      name: 'GLM 5.2',
+      apiBase: 'https://open.bigmodel.cn/api/paas/v4',
+      apiKeyEnv: 'GLM_API_KEY',
+      defaultParams: {
+        model: 'glm-5.2',
+        temperature: 0.7,
+        maxTokens: 4096,
+      },
+    },
+    nemotron3: {
+      name: 'Nemotron 3 Ultra 550B',
+      apiBase: 'https://api.nvidia.com/v1',
+      apiKeyEnv: 'NEMOTRON_API_KEY',
+      defaultParams: {
+        model: 'nemotron-3-ultras',
+        temperature: 0.7,
+        maxTokens: 8192,
+      },
+    },
+  };
+
+  return models[modelName] || null;
+}
+
+async function inferWithModel(modelName, messages, customParams = {}) {
+  const config = getModelConfig(modelName);
+  if (!config) {
+    throw new Error(`Unknown model: ${modelName}`);
+  }
+
+  const apiKey = process.env[config.apiKeyEnv];
+  if (!apiKey) {
+    throw new Error(`Missing API key: ${config.apiKeyEnv}. Set it in .env file.`);
+  }
+
+  const params = {
+    ...config.defaultParams,
+    ...customParams,
+  };
+
+  const response = await axios.post(
+    `${config.apiBase}/chat/completions`,
+    {
+      model: params.model,
+      messages,
+      temperature: params.temperature,
+      max_tokens: params.maxTokens,
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 120000,
+    }
+  );
+
+  return response.data.choices[0].message.content;
 }
 
 function detectFramework(dir) {
@@ -289,10 +443,115 @@ function createTarStream(dir) {
   });
 }
 
-console.log('���� CloudScale Worker Engine Initialized...');
-console.log(
-  '���� Listening for deployment jobs on queue: "deployment-queue"...\n'
-);
+async function stopAndRemoveContainer(containerId, containerName) {
+  if (!containerId) return;
+  try {
+    const container = docker.getContainer(containerId);
+    await container.stop({ t: 10 }).catch(() => {});
+    await container.remove({ force: true }).catch(() => {});
+    console.log(`[Container] Stopped and removed: ${containerName || containerId}`);
+  } catch (err) {
+    console.error(`[Container] Failed to stop/remove ${containerId}:`, err.message);
+  }
+}
+
+async function removeDockerImage(imageName) {
+  if (!imageName) return;
+  try {
+    const image = docker.getImage(imageName);
+    await image.remove({ force: true }).catch(() => {});
+    console.log(`[Image] Removed: ${imageName}`);
+  } catch (err) {
+    console.error(`[Image] Failed to remove ${imageName}:`, err.message);
+  }
+}
+
+async function performHealthCheck(containerId, port, frameworkName = 'unknown', maxRetries = 10, intervalMs = 3000) {
+  const isStaticSite = frameworkName === 'static';
+  const healthPath = isStaticSite ? '/' : '/health';
+  const expectJson = !isStaticSite;
+  
+  // Use host.docker.internal to reach host from within container
+  const healthCheckHost = process.env.HEALTH_CHECK_HOST || 'host.docker.internal';
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const container = docker.getContainer(containerId);
+      const inspect = await container.inspect();
+      
+      if (!inspect.State.Running) {
+        throw new Error('Container is not running');
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const response = await fetch(`http://${healthCheckHost}:${port}${healthPath}`, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        if (expectJson) {
+          const healthData = await response.json();
+          if (healthData.status === 'healthy' || healthData.status === 'ok') {
+            console.log(`[HealthCheck] Passed on attempt ${attempt}/${maxRetries}`);
+            return true;
+          }
+        } else {
+          // For static sites, any 2xx response is healthy
+          console.log(`[HealthCheck] Passed on attempt ${attempt}/${maxRetries} (static site)`);
+          return true;
+        }
+      }
+      
+      console.log(`[HealthCheck] Attempt ${attempt}/${maxRetries} failed with status ${response.status}, retrying in ${intervalMs}ms...`);
+    } catch (err) {
+      console.log(`[HealthCheck] Attempt ${attempt}/${maxRetries} error: ${err.message}`);
+    }
+    
+    if (attempt < maxRetries) {
+      await new Promise(resolve => setTimeout(resolve, intervalMs));
+    }
+  }
+  
+  throw new Error(`Health check failed after ${maxRetries} attempts`);
+}
+
+async function cleanupDeploymentResources(deploymentId, containerId, imageName, deploymentDir) {
+  console.log(`[Cleanup] Cleaning up resources for deployment ${deploymentId}`);
+  
+  if (containerId) {
+    try {
+      const container = docker.getContainer(containerId);
+      await container.stop({ t: 10 }).catch(() => {});
+      await container.remove({ force: true }).catch(() => {});
+      console.log(`[Cleanup] Removed container: ${containerId}`);
+    } catch (err) {
+      console.error(`[Cleanup] Failed to remove container ${containerId}:`, err.message);
+    }
+  }
+  
+  if (imageName) {
+    try {
+      const image = docker.getImage(imageName);
+      await image.remove({ force: true }).catch(() => {});
+      console.log(`[Cleanup] Removed image: ${imageName}`);
+    } catch (err) {
+      console.error(`[Cleanup] Failed to remove image ${imageName}:`, err.message);
+    }
+  }
+  
+  try {
+    await fs.remove(deploymentDir).catch(() => {});
+    console.log(`[Cleanup] Removed deployment directory: ${deploymentDir}`);
+  } catch (err) {
+    console.error(`[Cleanup] Failed to remove deployment directory:`, err.message);
+  }
+}
+
+console.log('🚀 CloudScale Worker Engine Initialized...');
+console.log('📡 Listening for deployment jobs on queue: "deployment-queue"...');
 
 const worker = new Worker(
   'deployment-queue',
@@ -308,75 +567,81 @@ const worker = new Worker(
     } = job.data;
 
     console.log('==================================================');
-    console.log(
-      '���� [Job ID: ' +
-        job.id +
-        '] Received deployment job for: "' +
-        projectName +
-        '"'
-    );
-    console.log('   • Project ID: ' + projectId);
-    console.log('   • Repo: ' + repoUrl);
-    console.log('   • Branch: ' + branch);
-    console.log('   • Target Host Port: ' + assignedPort);
+    console.log(`📦 [Job ID: ${job.id}] Received deployment job for: "${projectName}"`);
+    console.log(`   • Project ID: ${projectId}`);
+    console.log(`   • Repo: ${repoUrl}`);
+    console.log(`   • Branch: ${branch}`);
+    console.log(`   • Target Host Port: ${assignedPort}`);
     console.log('==================================================');
 
-    publishLog(deploymentId, `[0/4] Validating repository URL...`);
-    
-    validateRepoUrl(repoUrl);
-    
-    publishLog(deploymentId, `[0/4] Repository URL validated.`);
-
-    await prisma.deployment.update({
-      where: {
-        id: deploymentId,
-      },
-      data: {
-        status: 'BUILDING',
-        logs: cleanLogs(`Deployment started for ${projectName}`),
-      },
-    });
-
-    const deploymentDir = path.join(
-      deploymentsDir,
-      deploymentId
-    );
+    const deploymentDir = path.join(deploymentsDir, deploymentId);
+    let container;
+    let imageTag;
+    let containerName;
+    let buildLogs = '';
+    let frameworkInfo;
 
     try {
-      publishLog(deploymentId, '[1/4] Cloning GitHub repository...');
+      await updateDeploymentStatus(deploymentId, 'VALIDATING');
+      await publishLog(deploymentId, 'VALIDATING', 'Validating repository URL...', DEPLOYMENT_STAGES.VALIDATING.progress);
+      await job.updateProgress(DEPLOYMENT_STAGES.VALIDATING.progress);
 
-      await fs.remove(deploymentDir);
+      try {
+        validateRepoUrl(repoUrl);
+        await publishLog(deploymentId, 'VALIDATING', 'Repository URL validated.', DEPLOYMENT_STAGES.VALIDATING.progress);
+      } catch (err) {
+        throw new Error(`VALIDATING failed: ${err.message}`);
+      }
 
-      await simpleGit().clone(
-        repoUrl,
-        deploymentDir,
-        [
-          '--branch',
-          branch,
-          '--single-branch',
-        ]
-      );
+      await updateDeploymentStatus(deploymentId, 'CLONING');
+      await publishLog(deploymentId, 'CLONING', 'Cloning GitHub repository...', DEPLOYMENT_STAGES.CLONING.progress);
+      await job.updateProgress(DEPLOYMENT_STAGES.CLONING.progress);
 
-      publishLog(deploymentId, '[1/4] Repository cloned successfully.');
+      try {
+        await fs.remove(deploymentDir);
+        await simpleGit().clone(
+          repoUrl,
+          deploymentDir,
+          ['--branch', branch, '--single-branch']
+        );
+        await publishLog(deploymentId, 'CLONING', 'Repository cloned successfully.', DEPLOYMENT_STAGES.CLONING.progress);
+      } catch (err) {
+        throw new Error(`CLONING failed: ${err.message}`);
+      }
 
-      publishLog(deploymentId, '[1.5/4] Checking for Dockerfile...');
-      checkDockerfileExists(deploymentDir);
-      publishLog(deploymentId, '[1.5/4] Dockerfile found.');
+      try {
+        await publishLog(deploymentId, 'CLONING', 'Checking for Dockerfile...', DEPLOYMENT_STAGES.CLONING.progress);
+        checkDockerfileExists(deploymentDir);
+        await publishLog(deploymentId, 'CLONING', 'Dockerfile found.', DEPLOYMENT_STAGES.CLONING.progress);
+      } catch (err) {
+        throw new Error(`CLONING failed (Dockerfile check): ${err.message}`);
+      }
 
-      publishLog(deploymentId, '[1.6/4] Detecting framework...');
-      const frameworkInfo = detectFramework(deploymentDir);
-      publishLog(deploymentId, '[1.6/4] Framework detection complete.');
+      await updateDeploymentStatus(deploymentId, 'DETECTING');
+      await publishLog(deploymentId, 'DETECTING', 'Detecting framework...', DEPLOYMENT_STAGES.DETECTING.progress);
+      await job.updateProgress(DEPLOYMENT_STAGES.DETECTING.progress);
 
-      publishLog(deploymentId, '[1.7/4] Removing .git directory...');
-      await fs.remove(path.join(deploymentDir, '.git'));
-      publishLog(deploymentId, '[1.7/4] .git directory removed.');
+      try {
+        frameworkInfo = detectFramework(deploymentDir);
+        await publishLog(deploymentId, 'DETECTING', `Framework detected: ${frameworkInfo.name}${frameworkInfo.version ? ` v${frameworkInfo.version}` : ''}${frameworkInfo.packageManager ? ` (${frameworkInfo.packageManager})` : ''}`, DEPLOYMENT_STAGES.DETECTING.progress);
+      } catch (err) {
+        throw new Error(`DETECTING failed (framework detection): ${err.message}`);
+      }
 
-      await job.updateProgress(25);
+      try {
+        await publishLog(deploymentId, 'DETECTING', 'Removing .git directory...', DEPLOYMENT_STAGES.DETECTING.progress);
+        await fs.remove(path.join(deploymentDir, '.git'));
+        await publishLog(deploymentId, 'DETECTING', '.git directory removed.', DEPLOYMENT_STAGES.DETECTING.progress);
+      } catch (err) {
+        throw new Error(`DETECTING failed (.git removal): ${err.message}`);
+      }
 
-      publishLog(deploymentId, '[2/4] Building Docker image...');
+      await updateDeploymentStatus(deploymentId, 'BUILDING');
+      await publishLog(deploymentId, 'BUILDING', 'Building Docker image...', DEPLOYMENT_STAGES.BUILDING.progress);
+      await job.updateProgress(DEPLOYMENT_STAGES.BUILDING.progress);
 
-      let buildLogs = '';
-      const imageTag = `cloudscale/${projectName}:latest`;
+      buildLogs = '';
+      imageTag = `cloudscale/${projectName}:latest`;
 
       try {
         const tarStream = await createTarStream(deploymentDir);
@@ -389,32 +654,39 @@ const worker = new Worker(
           buildStream.on('data', (chunk) => {
             const chunkStr = chunk.toString();
             buildLogs += chunkStr;
-            publishLog(deploymentId, `[Docker Build] ${chunkStr.trim()}`);
+            publishLog(deploymentId, 'BUILDING', `[Docker Build] ${chunkStr.trim()}`, DEPLOYMENT_STAGES.BUILDING.progress);
           });
 
           buildStream.on('end', resolve);
           buildStream.on('error', reject);
         });
 
-        publishLog(deploymentId, '[2/4] Docker image built successfully.');
+        await publishLog(deploymentId, 'BUILDING', 'Docker image built successfully.', DEPLOYMENT_STAGES.BUILDING.progress);
       } catch (buildError) {
-        const errorMsg = `Docker build failed: ${buildError.message}\nBuild logs:\n${cleanLogs(buildLogs)}`;
+        const errorMsg = `BUILDING failed: ${buildError.message}\nBuild logs:\n${cleanLogs(buildLogs)}`;
         throw new Error(errorMsg);
       }
 
-      await job.updateProgress(50);
+      await updateDeploymentStatus(deploymentId, 'STARTING');
+      await publishLog(deploymentId, 'STARTING', 'Creating and starting container...', DEPLOYMENT_STAGES.STARTING.progress);
+      await job.updateProgress(DEPLOYMENT_STAGES.STARTING.progress);
 
-      publishLog(deploymentId, '[3/4] Creating and starting container...');
+      containerName = `app-${projectName}-${deploymentId.slice(0, 8)}`;
+      container = undefined;
 
-      let container;
-      const containerName = `app-${projectName}-${deploymentId.slice(0, 8)}`;
+      const sanitizedEnvVars = sanitizeEnvVars(environmentVariables);
 
       try {
+        try {
+          const existingContainer = docker.getContainer(containerName);
+          await existingContainer.remove({ force: true }).catch(() => {});
+        } catch (e) {}
+
         container = await docker.createContainer({
           Image: imageTag,
           HostConfig: {
             PortBindings: {
-              '3000/tcp': [{ HostPort: String(assignedPort) }],
+              '3000/tcp': [{ HostPort: String(assignedPort), HostIp: '0.0.0.0' }],
             },
 
             Memory: 512 * 1024 * 1024,
@@ -452,7 +724,7 @@ const worker = new Worker(
           ExposedPorts: {
             '3000/tcp': {},
           },
-          Env: ['PORT=3000', ...Object.entries(environmentVariables).map(([k, v]) => `${k}=${v}`)],
+          Env: ['PORT=3000', ...Object.entries(sanitizedEnvVars).map(([k, v]) => `${k}=${v}`)],
           Labels: {
             'cloudscale.projectId': projectId,
             'cloudscale.deploymentId': deploymentId,
@@ -460,10 +732,10 @@ const worker = new Worker(
           name: containerName,
         });
 
-        publishLog(deploymentId, `[3/4] Container created: ${containerName} (hardened, readonly rootfs)`);
+        await publishLog(deploymentId, 'STARTING', `Container created: ${containerName} (hardened, readonly rootfs)`, DEPLOYMENT_STAGES.STARTING.progress);
 
         await container.start();
-        publishLog(deploymentId, `[3/4] Container started`);
+        await publishLog(deploymentId, 'STARTING', 'Container started', DEPLOYMENT_STAGES.STARTING.progress);
 
         await new Promise((resolve) => setTimeout(resolve, 2000));
         const inspect = await container.inspect();
@@ -473,77 +745,97 @@ const worker = new Worker(
           throw new Error(`Container failed to start. Logs: ${cleanLogs(logs)}`);
         }
 
-        publishLog(deploymentId, '[3/4] Container verified running');
+        await publishLog(deploymentId, 'STARTING', 'Container verified running', DEPLOYMENT_STAGES.STARTING.progress);
       } catch (containerError) {
         if (container) {
           await container.remove({ force: true }).catch(() => {});
+        } else {
+          // Try to remove by name if container variable not set
+          try {
+            const existingContainer = docker.getContainer(containerName);
+            await existingContainer.remove({ force: true }).catch(() => {});
+          } catch (e) {}
         }
-        throw new Error(`Container creation/start failed: ${containerError.message}`);
+        throw new Error(`STARTING failed: ${containerError.message}`);
       }
 
-      await job.updateProgress(75);
+      await updateDeploymentStatus(deploymentId, 'HEALTH_CHECK');
+      await publishLog(deploymentId, 'HEALTH_CHECK', 'Running application health checks...', DEPLOYMENT_STAGES.HEALTH_CHECK.progress);
+      await job.updateProgress(DEPLOYMENT_STAGES.HEALTH_CHECK.progress);
 
-      publishLog(deploymentId, '[4/4] Container successfully provisioned! App live on port ' + assignedPort + '.');
+      try {
+        await performHealthCheck(container.id, assignedPort, frameworkInfo?.name);
+        await publishLog(deploymentId, 'HEALTH_CHECK', 'Health check passed!', DEPLOYMENT_STAGES.HEALTH_CHECK.progress);
+      } catch (healthError) {
+        await cleanupDeploymentResources(deploymentId, container.id, imageTag, deploymentDir);
+        throw new Error(`HEALTH_CHECK failed: ${healthError.message}`);
+      }
+
+      const deploymentUrl = `/deployments/${deploymentId}`;
+      
+      await updateDeploymentStatus(deploymentId, 'RUNNING', {
+        containerId: container.id,
+        containerName: containerName,
+        containerPort: 3000,
+        imageName: imageTag,
+        liveUrl: `http://localhost:${assignedPort}`,
+        deploymentUrl: deploymentUrl,
+      });
+      await publishLog(deploymentId, 'RUNNING', `Container successfully provisioned! App live on port ${assignedPort}.`, DEPLOYMENT_STAGES.RUNNING.progress);
+      await job.updateProgress(DEPLOYMENT_STAGES.RUNNING.progress);
 
       await prisma.deployment.update({
-        where: {
-          id: deploymentId,
-        },
+        where: { id: deploymentId },
         data: {
-          status: 'DEPLOYED',
-          containerId: container.id,
-          containerName: containerName,
-          containerPort: 3000,
-          imageName: imageTag,
-          liveUrl: `http://localhost:${assignedPort}`,
-          logs:
-            cleanLogs(`Deployment completed successfully. ` +
-            `Repository cloned to ${deploymentDir}. ` +
-            `Docker image built: ${imageTag}.\n` +
-            `Container: ${containerName} (${container.id.slice(0, 12)})\n` +
-            `Port mapping: ${assignedPort} -> 3000\n` +
-            `Framework: ${frameworkInfo.name}${frameworkInfo.version ? ` v${frameworkInfo.version}` : ''}${frameworkInfo.packageManager ? ` (${frameworkInfo.packageManager})` : ''}\n` +
-            `Build logs:\n${cleanLogs(buildLogs)}`),
+          logs: cleanLogs(`Deployment completed successfully. 
+Repository cloned to ${deploymentDir}. 
+Docker image built: ${imageTag}.
+Container: ${containerName} (${container.id.slice(0, 12)})
+Port mapping: ${assignedPort} -> 3000
+Framework: ${frameworkInfo.name}${frameworkInfo.version ? ` v${frameworkInfo.version}` : ''}${frameworkInfo.packageManager ? ` (${frameworkInfo.packageManager})` : ''}
+Build logs:\n${cleanLogs(buildLogs)}`),
         },
       });
 
-      await job.updateProgress(100);
-
-      publishLog(deploymentId, '[4/4] Deployment completed successfully!');
+      await publishLog(deploymentId, 'RUNNING', 'Deployment completed successfully!', DEPLOYMENT_STAGES.RUNNING.progress);
 
       return {
-        status: 'DEPLOYED',
+        status: 'RUNNING',
         imageTag: imageTag,
         containerId: container.id,
         containerName: containerName,
         containerPort: 3000,
         hostPort: assignedPort,
         liveUrl: `http://localhost:${assignedPort}`,
+        deploymentUrl: `/deployments/${deploymentId}`,
         framework: frameworkInfo,
       };
     } catch (error) {
-      console.error(
-        '��� Deployment failed:',
-        error.message
-      );
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      
+      console.error('❌ Deployment failed:', {
+        deploymentId,
+        projectId,
+        projectName,
+        stage: 'unknown',
+        error: errorMessage,
+        stack: errorStack,
+      });
 
-      publishLog(deploymentId, `Deployment failed: ${error.message}`);
+      await publishLog(deploymentId, 'FAILED', `Deployment failed: ${errorMessage}`, DEPLOYMENT_STAGES.FAILED.progress);
 
       try {
-        await fs.remove(deploymentDir);
-        console.log(`���� Cleaned up deployment directory: ${deploymentDir}`);
+        await cleanupDeploymentResources(deploymentId, container?.id, imageTag, deploymentDir);
       } catch (cleanupError) {
-        console.error('������ Failed to cleanup deployment directory:', cleanupError.message);
+        console.error('🗑️⚠️ Failed to cleanup deployment resources:', {
+          deploymentId,
+          error: cleanupError.message,
+        });
       }
 
-      await prisma.deployment.update({
-        where: {
-          id: deploymentId,
-        },
-        data: {
-          status: 'FAILED',
-          logs: cleanLogs(error.message),
-        },
+      await updateDeploymentStatus(deploymentId, 'FAILED', {
+        logs: cleanLogs(errorMessage),
       });
 
       throw error;
@@ -551,41 +843,80 @@ const worker = new Worker(
   },
   {
     connection: redisConnection,
+    maxStalledCount: 2,
+    stalledInterval: 30000,
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 5000,
+    },
+    removeOnComplete: { count: 100 },
+    removeOnFail: { count: 50 },
   }
 );
 
-worker.on(
-  'completed',
-  (job, returnvalue) => {
-    console.log(
-      '��� [Job ID: ' +
-        job.id +
-        '] COMPLETED SUCCESSFULLY!'
-    );
+worker.on('completed', (job, returnvalue) => {
+  console.log(`✅ [Job ID: ${job.id}] COMPLETED SUCCESSFULLY!`);
+  console.log('   Result:', returnvalue);
+  
+  if (job.data?.deploymentId) {
+    publishLog(job.data.deploymentId, 'RUNNING', 'Job completed successfully', DEPLOYMENT_STAGES.RUNNING.progress);
+  }
+});
 
-    console.log(
-      '   Result:',
-      returnvalue
-    );
-    
-    if (job.data?.deploymentId) {
-      publishLog(job.data.deploymentId, 'Job completed successfully');
+worker.on('failed', (job, err) => {
+  const errorMessage = err instanceof Error ? err.message : String(err);
+  const errorStack = err instanceof Error ? err.stack : undefined;
+  
+  console.error(`❌ [Job ID: ${job?.id}] FAILED:`, {
+    jobId: job?.id,
+    deploymentId: job?.data?.deploymentId,
+    projectId: job?.data?.projectId,
+    projectName: job?.data?.projectName,
+    attempt: job?.attemptsMade,
+    maxAttempts: job?.opts?.attempts,
+    error: errorMessage,
+    stack: errorStack,
+  });
+  
+  if (job?.data?.deploymentId) {
+    publishLog(job.data.deploymentId, 'FAILED', `Job failed: ${errorMessage}`, DEPLOYMENT_STAGES.FAILED.progress);
+  }
+});
+
+worker.on('stalled', (jobId) => {
+  console.warn(`⚠️ [Job ID: ${jobId}] STALLED - will be retried`);
+  
+  // Try to get job details for better logging
+  const queue = new Queue('deployment-queue', { connection: redisConnection });
+  queue.getJob(jobId).then(job => {
+    if (job) {
+      console.warn(`⚠️ Stalled job details:`, {
+        jobId: job.id,
+        deploymentId: job.data?.deploymentId,
+        projectId: job.data?.projectId,
+        attemptsMade: job.attemptsMade,
+        maxAttempts: job.opts?.attempts,
+      });
     }
-  }
-);
+    return queue.close();
+  }).catch(() => {});
+});
 
-worker.on(
-  'failed',
-  (job, err) => {
-    console.error(
-      '��� [Job ID: ' +
-        job?.id +
-        '] FAILED: ' +
-        err.message
-    );
-    
-    if (job?.data?.deploymentId) {
-      publishLog(job.data.deploymentId, `Job failed: ${err.message}`);
-    }
-  }
-);
+worker.on('error', (err) => {
+  console.error('❌ Worker error:', {
+    error: err instanceof Error ? err.message : String(err),
+    stack: err instanceof Error ? err.stack : undefined,
+  });
+});
+
+const gracefulShutdown = async (signal) => {
+  console.log(`\n🛑 Received ${signal}. Shutting down gracefully...`);
+  await worker.close();
+  await redis.quit();
+  await prisma.$disconnect();
+  process.exit(0);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

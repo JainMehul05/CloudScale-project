@@ -51,7 +51,7 @@ async function sendTestJob() {
         const deployment = await prisma.deployment.create({
             data: {
                 projectId: project.id,
-                status: "PENDING"
+                status: "QUEUED"
             }
         });
 

@@ -14,8 +14,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         password: { label: "Password", type: "password" },
       },
       authorize: async (credentials) => {
+        console.log('[NextAuth] authorize called with:', credentials);
         if (!credentials?.email || !credentials?.password) {
-          throw new Error("Email and password are required");
+          console.log('[NextAuth] Missing credentials');
+          return null;
         }
 
         const user = await prisma.user.findUnique({
@@ -23,7 +25,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         });
 
         if (!user || !user.password) {
-          throw new Error("Invalid email or password");
+          console.log('[NextAuth] User not found or no password');
+          return null;
         }
 
         const isValid = await bcrypt.compare(
@@ -32,9 +35,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         );
 
         if (!isValid) {
-          throw new Error("Invalid email or password");
+          console.log('[NextAuth] Invalid password');
+          return null;
         }
 
+        console.log('[NextAuth] Auth successful for:', user.email);
         return {
           id: user.id,
           email: user.email,
@@ -65,5 +70,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   session: {
     strategy: "jwt",
   },
+  trustHost: true,
   secret: process.env.NEXTAUTH_SECRET,
 });

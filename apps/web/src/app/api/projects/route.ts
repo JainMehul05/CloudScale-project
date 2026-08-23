@@ -4,12 +4,16 @@ import { prisma } from "@/lib/prisma";
 import { Queue } from "bullmq";
 import { decryptEnvVarsForDeployment } from "@/lib/encryption";
 
-const deploymentQueue = new Queue("deployment-queue", {
-  connection: {
-    host: "localhost",
-    port: 6379,
-  },
-});
+function getDeploymentQueue() {
+  return new Queue("deployment-queue", {
+    connection: {
+      host: process.env.REDIS_HOST || "localhost",
+      port: parseInt(process.env.REDIS_PORT || "6379", 10),
+    },
+  });
+}
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
@@ -18,18 +22,25 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const projects = await prisma.project.findMany({
-      where: { userId: session.user.id },
-      include: {
-        deployments: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
+    const userId = session.user.id;
+
+    let projects: Array<{ id: string; name: string; githubRepo: string; branch: string; port: number; userId: string; createdAt: Date; deployments: { id: string; status: string; liveUrl: string | null }[] }> = [];
+    try {
+      projects = await prisma.project.findMany({
+        where: { userId },
+        include: {
+          deployments: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
         },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
+    } catch (dbError) {
+      throw dbError;
+    }
 
     const formattedProjects = projects.map((project) => {
       const latestDeployment = project.deployments[0];
@@ -65,6 +76,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const userId = session.user.id;
+
     const body = await request.json();
     const { name, githubRepo, branch, framework } = body;
 
@@ -77,15 +90,20 @@ export async function POST(request: Request) {
 
     const assignedPort = Math.floor(Math.random() * 900) + 3001;
 
-    const project = await prisma.project.create({
-      data: {
-        name,
-        githubRepo,
-        branch: branch || "main",
-        port: assignedPort,
-        userId: session.user.id,
-      },
-    });
+    let project;
+    try {
+      project = await prisma.project.create({
+        data: {
+          name,
+          githubRepo,
+          branch: branch || "main",
+          port: assignedPort,
+          userId,
+        },
+      });
+    } catch (dbError) {
+      throw dbError;
+    }
 
     const deployment = await prisma.deployment.create({
       data: {
@@ -101,7 +119,7 @@ export async function POST(request: Request) {
 
     const environmentVariables = await decryptEnvVarsForDeployment(envVars);
 
-    await deploymentQueue.add("build-job", {
+    await getDeploymentQueue().add("build-job", {
       deploymentId: deployment.id,
       projectId: project.id,
       projectName: project.name,

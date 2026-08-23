@@ -15,6 +15,7 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const userId = session.user.id;
     const { id: deploymentId } = await params;
 
     const deployment = await prisma.deployment.findUnique({
@@ -26,7 +27,7 @@ export async function GET(
       return NextResponse.json({ error: "Deployment not found" }, { status: 404 });
     }
 
-    if (deployment.project.userId !== session.user.id) {
+    if (deployment.project.userId !== userId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

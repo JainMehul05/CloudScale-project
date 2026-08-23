@@ -7,7 +7,7 @@ interface CloudScaleLogoProps {
   variant?: "default" | "monochrome" | "inverse";
   className?: string;
   showText?: boolean;
-  textSize?: "sm" | "md" | "lg" | "xl";
+  textSize?: "sm" | "md" | "lg" | "xl" | "2xl";
 }
 
 const sizeMap = {
@@ -22,6 +22,7 @@ const textSizeMap = {
   md: "text-base font-semibold",
   lg: "text-lg font-bold",
   xl: "text-xl font-bold",
+  "2xl": "text-2xl font-bold",
 };
 
 export function CloudScaleLogo({

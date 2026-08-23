@@ -4,9 +4,16 @@ import { prisma } from "@/lib/prisma";
 import { Queue } from "bullmq";
 import { decryptEnvVarsForDeployment } from "@/lib/encryption";
 
-const deploymentQueue = new Queue("deployment-queue", {
-  connection: { host: "localhost", port: 6379 },
-});
+function getDeploymentQueue() {
+  return new Queue("deployment-queue", {
+    connection: {
+      host: process.env.REDIS_HOST || "localhost",
+      port: parseInt(process.env.REDIS_PORT || "6379", 10),
+    },
+  });
+}
+
+export const dynamic = "force-dynamic";
 
 async function checkDeploymentOwnership(deploymentId: string, userId: string) {
   const deployment = await prisma.deployment.findUnique({
@@ -26,9 +33,10 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const userId = session.user.id;
     const { id: deploymentId } = await params;
 
-    const deployment = await checkDeploymentOwnership(deploymentId, session.user.id);
+    const deployment = await checkDeploymentOwnership(deploymentId, userId);
     if (!deployment) {
       return NextResponse.json({ error: "Deployment not found or access denied" }, { status: 404 });
     }
@@ -65,7 +73,7 @@ export async function POST(
     }
 
     // Queue new deployment job
-    await deploymentQueue.add("build-job", {
+    await getDeploymentQueue().add("build-job", {
       deploymentId: newDeployment.id,
       projectId: project.id,
       projectName: project.name,

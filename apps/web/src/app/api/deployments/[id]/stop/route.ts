@@ -5,6 +5,8 @@ import Docker from "dockerode";
 
 const docker = new Docker();
 
+export const dynamic = "force-dynamic";
+
 async function checkDeploymentOwnership(deploymentId: string, userId: string) {
   const deployment = await prisma.deployment.findUnique({
     where: { id: deploymentId },

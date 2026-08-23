@@ -1,0 +1,1 @@
+SELECT id, stage, message, timestamp FROM "DeploymentLog" WHERE "deploymentId" = '64018050-8f3a-46bf-8b9b-890ca85f77a7' ORDER BY timestamp;

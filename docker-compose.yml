@@ -1,5 +1,4 @@
 services:
-
   postgres:
     image: postgres:16
     container_name: cloudscale_postgres
@@ -12,7 +11,13 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
+    networks:
+      - cloudscale-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cloudscale -d cloudscale"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7
@@ -20,8 +25,80 @@ services:
     restart: always
     ports:
       - "6379:6379"
+    networks:
+      - cloudscale-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        ENV_ENCRYPTION_KEY: "${ENV_ENCRYPTION_KEY}"
+        NEXTAUTH_SECRET: "${NEXTAUTH_SECRET}"
+        NEXTAUTH_URL: "${NEXTAUTH_URL}"
+        NEXT_PUBLIC_DEV_MODE: "true"
+    container_name: cloudscale_web
+    restart: always
+    environment:
+      DATABASE_URL: "postgresql://cloudscale:cloudscale123@postgres:5432/cloudscale?schema=public"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      NEXTAUTH_SECRET: "${NEXTAUTH_SECRET}"
+      NEXTAUTH_URL: "${NEXTAUTH_URL}"
+      ENV_ENCRYPTION_KEY: "${ENV_ENCRYPTION_KEY}"
+      NEXT_PUBLIC_DEV_MODE: "true"
+      DOCKER_HOST: "unix:///var/run/docker.sock"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cloudscale-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http = require('http'); http.get('http://localhost:3000/api/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: cloudscale_worker
+    restart: always
+    environment:
+      DATABASE_URL: "postgresql://cloudscale:cloudscale123@postgres:5432/cloudscale?schema=public"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      ENV_ENCRYPTION_KEY: "${ENV_ENCRYPTION_KEY}"
+      DOCKER_HOST: "unix:///var/run/docker.sock"
+      HEALTH_CHECK_HOST: "host.docker.internal"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cloudscale-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+networks:
+  cloudscale-network:
+    driver: bridge
 
 volumes:
-
   postgres_data:

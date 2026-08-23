@@ -1,0 +1,1 @@
+SELECT id, status, "createdAt", "startedAt", "completedAt", "liveUrl" FROM "Deployment" WHERE id = '64018050-8f3a-46bf-8b9b-890ca85f77a7';

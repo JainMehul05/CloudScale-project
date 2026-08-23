@@ -1,0 +1,1 @@
+SELECT id, status, "containerId", "containerName", "liveUrl" FROM "Deployment" WHERE id = '497c2597-19ed-4797-8311-e1e65aeae3f7';

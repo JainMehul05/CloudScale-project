@@ -3,17 +3,8 @@ const prisma = new PrismaClient();
 
 async function main() {
   const deployments = await prisma.deployment.findMany({
-    orderBy: { createdAt: 'desc' },
-    take: 5
+    include: { deploymentLogs: { orderBy: { timestamp: 'asc' } } }
   });
-  for (const d of deployments) {
-    console.log('---');
-    console.log('ID:', d.id);
-    console.log('Status:', d.status);
-    console.log('Live URL:', d.liveUrl);
-    console.log('Container:', d.containerName);
-    console.log('Logs:', d.logs?.substring(0, 500));
-  }
+  console.log(JSON.stringify(deployments, null, 2));
 }
-
-main().finally(() => prisma.$disconnect());
+main().catch(console.error).finally(() => prisma.$disconnect());

@@ -2,8 +2,8 @@ import Redis from 'ioredis';
 
 const redisClientSingleton = () => {
   return new Redis({
-    host: 'localhost',
-    port: 6379,
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT || '6379', 10),
     maxRetriesPerRequest: 3,
     retryStrategy: (times) => {
       if (times > 3) return null;
@@ -25,8 +25,8 @@ if (process.env.NODE_ENV !== 'production') {
 
 export const createRedisSubscriber = () => {
   return new Redis({
-    host: 'localhost',
-    port: 6379,
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT || '6379', 10),
     maxRetriesPerRequest: 3,
     retryStrategy: (times) => {
       if (times > 3) return null;

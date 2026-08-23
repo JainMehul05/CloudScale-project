@@ -4,12 +4,16 @@ import { prisma } from "@/lib/prisma";
 import { Queue } from "bullmq";
 import { decryptEnvVarsForDeployment } from "@/lib/encryption";
 
-const deploymentQueue = new Queue("deployment-queue", {
-  connection: {
-    host: "localhost",
-    port: 6379,
-  },
-});
+function getDeploymentQueue() {
+  return new Queue("deployment-queue", {
+    connection: {
+      host: process.env.REDIS_HOST || "localhost",
+      port: parseInt(process.env.REDIS_PORT || "6379", 10),
+    },
+  });
+}
+
+export const dynamic = "force-dynamic";
 
 async function checkProjectOwnership(projectId: string, userId: string) {
   const project = await prisma.project.findUnique({
@@ -29,9 +33,10 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const userId = session.user.id;
     const { id: projectId } = await params;
 
-    const project = await checkProjectOwnership(projectId, session.user.id);
+    const project = await checkProjectOwnership(projectId, userId);
     if (!project) {
       return NextResponse.json({ error: "Project not found or access denied" }, { status: 404 });
     }
@@ -49,7 +54,7 @@ export async function POST(
     });
     const environmentVariables = await decryptEnvVarsForDeployment(envVars);
 
-    await deploymentQueue.add("build-job", {
+    await getDeploymentQueue().add("build-job", {
       deploymentId: deployment.id,
       projectId: project.id,
       projectName: project.name,
