@@ -1,5 +1,35 @@
 import { Redis } from "ioredis";
 
+/**
+ * Redis-backed sliding window rate limiter using sorted sets.
+ *
+ * WHY REDIS SORTED SETS:
+ * - Atomic operations via pipeline/MULTI for race-condition-free counting
+ * - Native TTL via EXPIRE for automatic cleanup (no background job needed)
+ * - Score-based windowing (timestamp as score) enables precise sliding window
+ * - ZRANGEBYSCORE efficiently removes expired entries
+ * - O(log N) insertion/removal, O(log N + M) range queries
+ * - Single Redis key per rate limit bucket (memory efficient)
+ *
+ * RATE LIMITS CONFIGURED:
+ * - Register: 5 requests/hour per IP (strict - prevents account enumeration)
+ * - Login (IP): 10 requests/15min per IP (allows legitimate retries)
+ * - Login (Email): 5 requests/15min per email (prevents credential stuffing)
+ *
+ * FAIL-OPEN BEHAVIOR:
+ * - If Redis is unavailable, requests are ALLOWED (fail-open)
+ * - Reason: Security should not cause denial-of-service
+ * - Rate limiting is a protection layer, not a correctness requirement
+ * - Logs error for observability but doesn't block legitimate traffic
+ *
+ * FUTURE IMPROVEMENTS:
+ * - Distributed rate limiting with Redis Cluster (current: single instance)
+ * - Token bucket algorithm for smoother burst handling
+ * - Per-user limits after authentication (complement IP/email limits)
+ * - Dynamic limits based on reputation/risk scoring
+ * - Webhook/alerting on sustained limit violations
+ */
+
 const redis = new Redis({
   host: process.env.REDIS_HOST || "localhost",
   port: parseInt(process.env.REDIS_PORT || "6379", 10),
@@ -45,7 +75,7 @@ export async function checkRateLimit(config: RateLimitConfig): Promise<RateLimit
     const success = currentCount < config.limit;
 
     if (!success) {
-      // @ts-ignore - ioredis types issue with zrange arguments
+      // @ts-expect-error - ioredis types issue with zrange arguments
       const oldest = await redis.zrange(key, 0, 0);
       const oldestTimestamp = oldest[0]?.split("-")[0];
       const resetMs = oldestTimestamp ? parseInt(oldestTimestamp, 10) + config.windowMs - now : config.windowMs;
