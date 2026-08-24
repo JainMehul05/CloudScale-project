@@ -5,10 +5,11 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { Mail, Lock, AlertCircle, Loader2, Eye, EyeOff, User } from "lucide-react";
+import { Mail, Lock, AlertCircle, Loader2, Eye, EyeOff, User, XCircle } from "lucide-react";
 import { CloudScaleLogo } from "@/components/ui/CloudScaleLogo";
 import { cn, componentStyles } from "@/lib/design-system";
 import { useMousePosition, useReducedMotion } from "@/hooks/useMousePosition";
+import { validatePassword, getPasswordStrengthLabel, getPasswordStrengthColor, PASSWORD_REQUIREMENTS } from "@/lib/password";
 
 function SectionEyebrow({ children }: { children: React.ReactNode }) {
   return (
@@ -72,6 +73,7 @@ function RegisterForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [formError, setFormError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordValidation, setPasswordValidation] = useState<ReturnType<typeof validatePassword> | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,8 +86,9 @@ function RegisterForm() {
       return;
     }
 
-    if (password.length < 8) {
-      setFormError("Password must be at least 8 characters");
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.valid) {
+      setFormError(passwordValidation.errors.join(", "));
       setIsLoading(false);
       return;
     }
@@ -267,10 +270,13 @@ function RegisterForm() {
                   id="password"
                   type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setPasswordValidation(validatePassword(e.target.value));
+                  }}
                   placeholder="••••••••"
                   required
-                  minLength={8}
+                  minLength={PASSWORD_REQUIREMENTS.minLength}
                   className={cn(componentStyles.input.base, "pl-9 pr-10")}
                 />
                 <motion.button
@@ -284,6 +290,37 @@ function RegisterForm() {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </motion.button>
               </div>
+              {password && passwordValidation && (
+                <div className="mt-2 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className={cn("font-medium", getPasswordStrengthColor(passwordValidation.score))}>
+                      Strength: {getPasswordStrengthLabel(passwordValidation.score)}
+                    </span>
+                    <span className="text-zinc-500">
+                      {passwordValidation.score}/{Object.keys(PASSWORD_REQUIREMENTS).length - 1}
+                    </span>
+                  </div>
+                  <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${(passwordValidation.score / (Object.keys(PASSWORD_REQUIREMENTS).length - 1)) * 100}%` }}
+                      transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                      className="h-full rounded-full transition-colors"
+                      style={{ backgroundColor: getPasswordStrengthColor(passwordValidation.score).replace("text-", "bg-") }}
+                    />
+                  </div>
+                  {passwordValidation.errors.length > 0 && (
+                    <ul className="text-xs text-zinc-500 space-y-0.5">
+                      {passwordValidation.errors.map((error, idx) => (
+                        <li key={idx} className="flex items-center gap-1">
+                          <XCircle className="w-3 h-3 text-[#FF3366] flex-shrink-0" />
+                          {error}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </motion.div>
 
             <motion.div
