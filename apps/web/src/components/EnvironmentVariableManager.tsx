@@ -2,12 +2,15 @@
 
 import React, { useState, useEffect, FormEvent, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, X, Key, Eye, EyeOff, Loader2, Check, AlertCircle, Trash2, Copy, CheckCircle2, Shield } from "lucide-react";
+import { Plus, X, Key, Eye, EyeOff, Loader2, Check, AlertCircle, Trash2, Copy, CheckCircle2, Shield, Server, Globe, Monitor } from "lucide-react";
 import { cn, componentStyles } from "@/lib/design-system";
+
+type Environment = "DEVELOPMENT" | "PREVIEW" | "PRODUCTION";
 
 interface EnvVar {
   id: string;
   key: string;
+  environment: Environment;
   createdAt: string;
   updatedAt: string;
 }
@@ -18,11 +21,18 @@ interface EnvironmentVariableManagerProps {
   onEnvVarsChange?: () => void;
 }
 
+const ENVIRONMENTS: { value: Environment; label: string; icon: React.ReactNode; description: string }[] = [
+  { value: "DEVELOPMENT", label: "Development", icon: <Monitor className="w-4 h-4" />, description: "Local development environment" },
+  { value: "PREVIEW", label: "Preview", icon: <Globe className="w-4 h-4" />, description: "Preview/staging deployments" },
+  { value: "PRODUCTION", label: "Production", icon: <Server className="w-4 h-4" />, description: "Live production environment" },
+];
+
 export function EnvironmentVariableManager({
   projectId,
   initialEnvVars = [],
   onEnvVarsChange,
 }: EnvironmentVariableManagerProps) {
+  const [activeEnvironment, setActiveEnvironment] = useState<Environment>("PRODUCTION");
   const [envVars, setEnvVars] = useState<EnvVar[]>(initialEnvVars);
   const [showAddForm, setShowAddForm] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
@@ -53,14 +63,14 @@ export function EnvironmentVariableManager({
     return null;
   };
 
-  const refreshEnvVars = useCallback(async () => {
+  const fetchEnvVars = useCallback(async () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
     abortControllerRef.current = new AbortController();
 
     try {
-      const res = await fetch(`/api/projects/${projectId}/env`, {
+      const res = await fetch(`/api/projects/${projectId}/env?environment=${activeEnvironment}`, {
         signal: abortControllerRef.current.signal,
         cache: "no-store"
       });
@@ -71,7 +81,7 @@ export function EnvironmentVariableManager({
       if (error instanceof Error && error.name === "AbortError") return;
       showToast("Failed to load environment variables", "error");
     }
-  }, [projectId, showToast]);
+  }, [projectId, activeEnvironment, showToast]);
 
   const handleAdd = async (e: FormEvent) => {
     e.preventDefault();
@@ -92,7 +102,7 @@ export function EnvironmentVariableManager({
       const res = await fetch(`/api/projects/${projectId}/env`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: newKey.trim(), value: newValue }),
+        body: JSON.stringify({ key: newKey.trim(), value: newValue, environment: activeEnvironment }),
       });
 
       const data = await res.json();
@@ -103,14 +113,14 @@ export function EnvironmentVariableManager({
 
       setNewKey("");
       setNewValue("");
-      await refreshEnvVars();
+      await fetchEnvVars();
       onEnvVarsChange?.();
       showToast("Environment variable added successfully", "success");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to add environment variable";
 
       if (message.includes("already exists")) {
-        setErrors({ key: "This key already exists" });
+        setErrors({ key: "This key already exists in this environment" });
       } else {
         showToast(message, "error");
       }
@@ -144,12 +154,12 @@ export function EnvironmentVariableManager({
       setIsEditing(null);
       setEditValue("");
       showToast("Environment variable updated", "success");
-      refreshEnvVars();
+      fetchEnvVars();
       onEnvVarsChange?.();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to update";
       if (message.includes("already exists")) {
-        setErrors({ key: "This key already exists" });
+        setErrors({ key: "This key already exists in this environment" });
       } else {
         showToast(message, "error");
       }
@@ -169,7 +179,7 @@ export function EnvironmentVariableManager({
       if (!res.ok) throw new Error("Failed to delete");
 
       showToast("Environment variable deleted", "success");
-      refreshEnvVars();
+      fetchEnvVars();
       onEnvVarsChange?.();
     } catch {
       showToast("Failed to delete", "error");
@@ -181,19 +191,37 @@ export function EnvironmentVariableManager({
     return date.toLocaleDateString() + " " + date.toLocaleTimeString();
   };
 
+  const getEnvColor = (env: Environment) => {
+    switch (env) {
+      case "DEVELOPMENT": return "text-blue-400 bg-blue-500/10 border-blue-500/20";
+      case "PREVIEW": return "text-purple-400 bg-purple-500/10 border-purple-500/20";
+      case "PRODUCTION": return "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
+    }
+  };
+
+  const getEnvIcon = (env: Environment) => {
+    switch (env) {
+      case "DEVELOPMENT": return <Monitor className="w-3.5 h-3.5" />;
+      case "PREVIEW": return <Globe className="w-3.5 h-3.5" />;
+      case "PRODUCTION": return <Server className="w-3.5 h-3.5" />;
+    }
+  };
+
   useEffect(() => {
-    refreshEnvVars();
+    fetchEnvVars();
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     };
-  }, [refreshEnvVars]);
+  }, [fetchEnvVars]);
 
   const copyToClipboard = async (text: string, label: string) => {
     await navigator.clipboard.writeText(text);
     showToast(`${label} copied`, "success");
   };
+
+  const filteredEnvVars = envVars.filter(v => v.environment === activeEnvironment);
 
   return (
     <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "overflow-hidden")}>
@@ -204,18 +232,40 @@ export function EnvironmentVariableManager({
           </div>
           <div>
             <h3 className="font-semibold text-white">Environment Variables</h3>
-            <p className="text-xs text-zinc-500">{envVars.length} variable{envVars.length !== 1 ? "s" : ""} configured</p>
+            <p className="text-xs text-zinc-500">{filteredEnvVars.length} variable{filteredEnvVars.length !== 1 ? "s" : ""} in {activeEnvironment.toLowerCase()}</p>
           </div>
         </div>
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => { setShowAddForm(true); setErrors({}); setNewKey(""); setNewValue(""); }}
-          className={cn("flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5")}
-        >
-          <Plus className="w-4 h-4" />
-          Add Variable
-        </motion.button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1" role="tablist" aria-label="Environment">
+            {ENVIRONMENTS.map((env) => (
+              <button
+                key={env.value}
+                role="tab"
+                aria-selected={activeEnvironment === env.value}
+                aria-label={env.label}
+                onClick={() => { setActiveEnvironment(env.value); setErrors({}); setShowAddForm(false); }}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                  activeEnvironment === env.value
+                    ? "text-white bg-white/10"
+                    : "text-zinc-400 hover:text-white hover:bg-white/5"
+                )}
+              >
+                {env.icon}
+                {env.label}
+              </button>
+            ))}
+          </div>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => { setShowAddForm(true); setErrors({}); setNewKey(""); setNewValue(""); }}
+            className={cn("flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5")}
+          >
+            <Plus className="w-4 h-4" />
+            Add Variable
+          </motion.button>
+        </div>
       </div>
 
       <AnimatePresence>
@@ -241,7 +291,7 @@ export function EnvironmentVariableManager({
       </AnimatePresence>
 
       <div className="divide-y divide-white/5">
-        {envVars.length === 0 && !showAddForm && (
+        {filteredEnvVars.length === 0 && !showAddForm && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -250,7 +300,7 @@ export function EnvironmentVariableManager({
             <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-white/[0.03] flex items-center justify-center border border-white/5">
               <Shield className="w-8 h-8 text-zinc-600" />
             </div>
-            <p className="text-sm font-medium text-white mb-1">No environment variables</p>
+            <p className="text-sm font-medium text-white mb-1">No environment variables in {activeEnvironment.toLowerCase()}</p>
             <p className="text-xs text-zinc-600">Add variables to make them available during deployments. Values are encrypted at rest using AES-256-GCM.</p>
             <motion.button
               whileHover={{ scale: 1.02 }}
@@ -265,7 +315,7 @@ export function EnvironmentVariableManager({
         )}
 
         <AnimatePresence mode="popLayout">
-          {envVars.map((envVar) => (
+          {filteredEnvVars.map((envVar) => (
             <motion.div
               key={envVar.id}
               initial={{ opacity: 0, y: 10 }}
@@ -275,10 +325,16 @@ export function EnvironmentVariableManager({
             >
               <div className="flex-1 min-w-0 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-white/[0.03] flex items-center justify-center border border-white/5 flex-shrink-0">
-                  <Key className="w-5 h-5 text-zinc-400" />
+                  {getEnvIcon(envVar.environment)}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
+                    <span className={cn(
+                      "px-2 py-0.5 text-[10px] font-medium rounded-full",
+                      getEnvColor(envVar.environment)
+                    )}>
+                      {envVar.environment}
+                    </span>
                     <code className="font-mono text-sm text-white bg-white/[0.03] px-2 py-1 rounded border border-white/10 truncate max-w-xs">
                       {envVar.key}
                     </code>

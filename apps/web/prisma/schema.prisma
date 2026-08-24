@@ -18,6 +18,8 @@ model Project {
   deployments Deployment[]
   envVars     EnvironmentVariable[]
   createdAt   DateTime     @default(now())
+
+  @@index([userId])
 }
 
 enum DeploymentStatus {
@@ -53,6 +55,9 @@ model Deployment {
   liveUrl         String?
   deploymentUrl   String?
   deploymentLogs  DeploymentLog[]
+
+  @@index([projectId, status])
+  @@index([status, createdAt])
 }
 
 model DeploymentLog {
@@ -66,30 +71,41 @@ model DeploymentLog {
   @@index([deploymentId, timestamp])
 }
 
-model EnvironmentVariable {
-  id            String   @id @default(uuid())
-  projectId     String
-  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  key           String
-  valueEncrypted String  @db.Text
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+enum Environment {
+  DEVELOPMENT
+  PREVIEW
+  PRODUCTION
+}
 
-  @@unique([projectId, key])
+model EnvironmentVariable {
+  id             String       @id @default(uuid())
+  projectId      String
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  key            String
+  valueEncrypted String       @db.Text
+  environment    Environment  @default(PRODUCTION)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([projectId, key, environment])
 }
 
 model User {
-  id            String    @id @default(uuid())
-  name          String?
-  email         String    @unique
-  emailVerified DateTime?
-  image         String?
-  password      String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  accounts      Account[]
-  sessions      Session[]
-  projects      Project[]
+  id                   String    @id @default(uuid())
+  name                 String?
+  email                String    @unique
+  emailVerified        DateTime?
+  image                String?
+  password             String?
+  failedLoginAttempts  Int       @default(0)
+  lockedUntil          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  accounts             Account[]
+  sessions             Session[]
+  projects             Project[]
+  auditLogs            AuditLog[]
+  activityLogs         ActivityLog[]
 }
 
 model Account {
@@ -125,4 +141,28 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  metadata  Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }

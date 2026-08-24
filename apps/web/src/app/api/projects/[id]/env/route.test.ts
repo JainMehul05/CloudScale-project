@@ -75,8 +75,9 @@ describe('POST /api/projects/[id]/env', () => {
         projectId: 'project-123',
         key: 'TEST_KEY',
         valueEncrypted: mockSerialized,
+        environment: 'PRODUCTION',
       },
-      select: { id: true, key: true, createdAt: true, updatedAt: true },
+      select: { id: true, key: true, environment: true, createdAt: true, updatedAt: true },
     });
   });
 
@@ -175,6 +176,6 @@ describe('POST /api/projects/[id]/env', () => {
     const data = await response.json();
 
     expect(response.status).toBe(409);
-    expect(data.error).toBe('Environment variable with this key already exists');
+    expect(data.error).toBe('Environment variable with this key already exists in this environment');
   });
 });

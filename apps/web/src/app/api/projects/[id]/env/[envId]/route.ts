@@ -63,9 +63,10 @@ export async function PATCH(
       if (key !== envVar.key) {
         const existing = await prisma.environmentVariable.findUnique({
           where: {
-            projectId_key: {
+            projectId_key_environment: {
               projectId,
               key,
+              environment: envVar.environment,
             },
           },
         });

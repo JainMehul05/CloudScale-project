@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { encrypt, serializeEncrypted } from "@/lib/encryption";
 
+type Environment = "DEVELOPMENT" | "PREVIEW" | "PRODUCTION";
+
 async function checkProjectOwnership(projectId: string, userId: string) {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
@@ -22,6 +24,8 @@ export async function GET(
     }
 
     const { id: projectId } = await params;
+    const searchParams = request.nextUrl.searchParams;
+    const environment = (searchParams.get("environment") as Environment) || "PRODUCTION";
 
     if (!(await checkProjectOwnership(projectId, session.user.id))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -31,9 +35,11 @@ export async function GET(
       where: { id: projectId },
       include: {
         envVars: {
+          where: { environment },
           select: {
             id: true,
             key: true,
+            environment: true,
             createdAt: true,
             updatedAt: true,
           },
@@ -81,7 +87,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { key, value } = body;
+    const { key, value, environment = "PRODUCTION" } = body;
 
     if (!key || !value) {
       return NextResponse.json(
@@ -100,18 +106,22 @@ export async function POST(
       );
     }
 
+    const validEnvironments: Environment[] = ["DEVELOPMENT", "PREVIEW", "PRODUCTION"];
+    const env: Environment = validEnvironments.includes(environment as Environment) ? environment as Environment : "PRODUCTION";
+
     const existing = await prisma.environmentVariable.findUnique({
       where: {
-        projectId_key: {
+        projectId_key_environment: {
           projectId,
           key,
+          environment: env,
         },
       },
     });
 
     if (existing) {
       return NextResponse.json(
-        { error: "Environment variable with this key already exists" },
+        { error: "Environment variable with this key already exists in this environment" },
         { status: 409 }
       );
     }
@@ -124,10 +134,12 @@ export async function POST(
         projectId,
         key,
         valueEncrypted: serialized,
+        environment: env,
       },
       select: {
         id: true,
         key: true,
+        environment: true,
         createdAt: true,
         updatedAt: true,
       },

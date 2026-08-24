@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -21,6 +23,8 @@ import { DeploymentCard } from "@/components/cloudscale/DeploymentCard";
 import { DeploymentStatus } from "@/components/cloudscale/StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { ActivityFeed } from "@/components/cloudscale/ActivityFeed";
+import { useToast } from "@/components/cloudscale/ToastProvider";
 import { cn, componentStyles } from "@/lib/design-system";
 
 interface ProjectData {
@@ -58,6 +62,15 @@ interface DeploymentData {
   logs?: string | null;
 }
 
+interface StatsData {
+  totalProjects: number;
+  activeProjects: number;
+  totalDeployments: number;
+  successfulDeployments: number;
+  failedDeployments: number;
+  successRate: number;
+}
+
 function ProjectSkeleton() {
   return (
     <div className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.elevated, "p-5 space-y-4")}>
@@ -87,6 +100,15 @@ function DeploymentSkeleton() {
         <Skeleton className="h-16 w-full rounded-xl" />
         <Skeleton className="h-16 w-full rounded-xl" />
       </div>
+    </div>
+  );
+}
+
+function StatsSkeleton() {
+  return (
+    <div className={cn(componentStyles.card.base, componentStyles.card.elevated, "p-5")}>
+      <Skeleton className="h-4 w-1/4 rounded mb-2" />
+      <Skeleton className="h-8 w-1/3 rounded" />
     </div>
   );
 }
@@ -153,8 +175,10 @@ function EmptyState({ icon: Icon, title, description, actionLabel, onAction, var
 export default function DashboardPage() {
   const [projects, setProjects] = useState<ProjectData[]>([]);
   const [recentDeployments, setRecentDeployments] = useState<DeploymentData[]>([]);
+  const [stats, setStats] = useState<StatsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeploymentsLoading, setIsDeploymentsLoading] = useState(true);
+  const [isStatsLoading, setIsStatsLoading] = useState(true);
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
   const [formData, setFormData] = useState({
@@ -163,19 +187,11 @@ export default function DashboardPage() {
     branch: "main",
     framework: "Next.js",
   });
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const router = useRouter();
-
-  const showToast = useCallback((message: string, type: "success" | "error") => {
-    if (!mountedRef.current) return;
-    setToast({ message, type });
-    setTimeout(() => {
-      if (mountedRef.current) setToast(null);
-    }, 3000);
-  }, []);
+  const { addToast } = useToast();
 
   const fetchProjects = useCallback(async () => {
     if (!mountedRef.current) return;
@@ -207,13 +223,13 @@ export default function DashboardPage() {
       if (error instanceof Error && error.name === "AbortError") return;
       if (!mountedRef.current) return;
       console.error("Failed to fetch projects:", error);
-      showToast("Failed to load projects", "error");
+      addToast({ message: "Failed to load projects", type: "error" });
     } finally {
       if (mountedRef.current && abortControllerRef.current === controller) {
         setIsLoading(false);
       }
     }
-  }, [showToast, router]);
+  }, [addToast, router]);
 
   const fetchRecentDeployments = useCallback(async () => {
     if (!mountedRef.current) return;
@@ -267,6 +283,33 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const fetchStats = useCallback(async () => {
+    if (!mountedRef.current) return;
+
+    try {
+      if (mountedRef.current) setIsStatsLoading(true);
+      const res = await fetch("/api/projects/stats", { cache: "no-store" });
+      if (!res.ok) {
+        if (res.status === 401) {
+          if (mountedRef.current) router.push("/auth/signin?callbackUrl=/dashboard");
+          return;
+        }
+        throw new Error("Failed to fetch stats");
+      }
+      const data = await res.json();
+      if (mountedRef.current) {
+        setStats(data);
+      }
+    } catch (error) {
+      if (!mountedRef.current) return;
+      console.error("Failed to fetch stats:", error);
+    } finally {
+      if (mountedRef.current) {
+        setIsStatsLoading(false);
+      }
+    }
+  }, []);
+
   const fetchUser = useCallback(async () => {
     if (!mountedRef.current) return;
     try {
@@ -284,6 +327,7 @@ export default function DashboardPage() {
     const init = () => {
       fetchProjects();
       fetchRecentDeployments();
+      fetchStats();
       fetchUser();
     };
     setTimeout(init, 0);
@@ -291,6 +335,7 @@ export default function DashboardPage() {
     intervalRef.current = setInterval(() => {
       fetchProjects();
       fetchRecentDeployments();
+      fetchStats();
     }, 10000);
 
     return () => {
@@ -298,7 +343,7 @@ export default function DashboardPage() {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (abortControllerRef.current) abortControllerRef.current.abort();
     };
-  }, [fetchProjects, fetchRecentDeployments, fetchUser]);
+  }, [fetchProjects, fetchRecentDeployments, fetchStats, fetchUser]);
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -325,14 +370,15 @@ export default function DashboardPage() {
       await res.json();
       await fetchProjects();
       await fetchRecentDeployments();
+      await fetchStats();
       if (mountedRef.current) {
         setFormData({ name: "", repository: "", branch: "main", framework: "Next.js" });
         setIsDeployModalOpen(false);
-        showToast("Project created successfully", "success");
+        addToast({ message: "Project created successfully", type: "success" });
       }
     } catch (error) {
       if (mountedRef.current) {
-        showToast(error instanceof Error ? error.message : "Failed to create project", "error");
+        addToast({ message: error instanceof Error ? error.message : "Failed to create project", type: "error" });
       }
     } finally {
       if (mountedRef.current) {
@@ -341,10 +387,11 @@ export default function DashboardPage() {
     }
   };
 
-  const totalProjects = projects.length;
-  const runningDeployments = recentDeployments.filter(d => d.status === "RUNNING").length;
-  const failedDeployments = recentDeployments.filter(d => d.status === "FAILED").length;
-  const totalDeployments = recentDeployments.length;
+  const totalProjects = stats?.totalProjects ?? projects.length;
+  const runningDeployments = stats?.activeProjects ?? recentDeployments.filter(d => d.status === "RUNNING").length;
+  const failedDeployments = stats?.failedDeployments ?? recentDeployments.filter(d => d.status === "FAILED").length;
+  const totalDeployments = stats?.totalDeployments ?? recentDeployments.length;
+  const successRate = stats?.successRate ?? 0;
 
   const statCards = [
     createStatData("Projects", totalProjects, { variant: "projects", trend: totalProjects > 0 ? "up" : "neutral", change: 12, changePeriod: "this month" }),
@@ -366,171 +413,129 @@ export default function DashboardPage() {
           transition={{ duration: 0.4 }}
           className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
         >
-          {statCards.map((stat) => (
-            <StatsCard key={stat.label} stats={[stat]} columns={1} gap="md" variant="default" />
-          ))}
-        </motion.div>
-
-        {/* Projects */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.1 }}
-          className="space-y-4"
-        >
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold tracking-tight text-white">Your Projects</h2>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => setIsDeployModalOpen(true)}
-              className="gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              New Project
-            </Button>
-          </div>
-
-          {isLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" aria-busy="true" aria-label="Loading projects">
-              {[1, 2, 3].map((i) => <ProjectSkeleton key={i} />)}
-            </div>
-          ) : projects.length === 0 ? (
-            <EmptyState
-              icon={Server}
-              title="No projects yet"
-              description="Deploy your first GitHub repository and CloudScale will handle builds, containers, and deployment automatically."
-              actionLabel="Deploy Your First Project"
-              onAction={() => setIsDeployModalOpen(true)}
-              variant="centered"
-            />
+          {isStatsLoading ? (
+            <>
+              {[1, 2, 3, 4].map((i) => <StatsSkeleton key={i} />)}
+            </>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" role="list" aria-label="Projects">
-              {projects.map((project) => (
-                <ProjectCard
-                  key={project.id}
-                  project={project}
-                  onDeploy={() => router.push(`/dashboard/projects/${project.id}`)}
-                />
-              ))}
-            </div>
+            statCards.map((stat) => (
+              <StatsCard key={stat.label} stats={[stat]} columns={1} gap="md" variant="default" />
+            ))
           )}
         </motion.div>
 
-        {/* Recent Deployments */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.2 }}
-          className="space-y-4"
-        >
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold tracking-tight text-white">Recent Deployments</h2>
-            <Link
-              href="/dashboard/deployments"
-              className="text-sm text-zinc-400 hover:text-white transition-colors flex items-center gap-1"
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column: Projects + Recent Deployments */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Projects */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.1 }}
+              className="space-y-4"
             >
-              View all
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </div>
-
-          {isDeploymentsLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4" aria-busy="true" aria-label="Loading deployments">
-              {[1, 2].map((i) => <DeploymentSkeleton key={i} />)}
-            </div>
-          ) : recentDeployments.length === 0 ? (
-            <EmptyState
-              icon={Terminal}
-              title="No deployments yet"
-              description="Your deployments will appear here once you create a project and push code to GitHub."
-              actionLabel="Create Project"
-              onAction={() => setIsDeployModalOpen(true)}
-            />
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4" role="list" aria-label="Recent deployments">
-              {recentDeployments.map((deployment) => (
-                <DeploymentCard
-                  key={deployment.id}
-                  deployment={deployment}
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold tracking-tight text-white">Your Projects</h2>
+                <Button
                   variant="default"
-                  showActions
-                  onViewLogs={(id) => router.push(`/dashboard/projects/${deployment.projectId}?deployment=${id}`)}
-                  onRetry={(id) => router.push(`/dashboard/projects/${deployment.projectId}?retry=${id}`)}
-                  onStop={(id) => router.push(`/dashboard/projects/${deployment.projectId}?stop=${id}`)}
-                  onOpenLive={(url) => window.open(url, "_blank")}
+                  size="sm"
+                  onClick={() => setIsDeployModalOpen(true)}
+                  className="gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  New Project
+                </Button>
+              </div>
+
+              {isLoading ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" aria-busy="true" aria-label="Loading projects">
+                  {[1, 2, 3].map((i) => <ProjectSkeleton key={i} />)}
+                </div>
+              ) : projects.length === 0 ? (
+                <EmptyState
+                  icon={Server}
+                  title="No projects yet"
+                  description="Deploy your first GitHub repository and CloudScale will handle builds, containers, and deployment automatically."
+                  actionLabel="Deploy Your First Project"
+                  onAction={() => setIsDeployModalOpen(true)}
+                  variant="centered"
                 />
-              ))}
-            </div>
-          )}
-        </motion.div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" role="list" aria-label="Projects">
+                  {projects.map((project) => (
+                    <ProjectCard
+                      key={project.id}
+                      project={project}
+                      onDeploy={() => router.push(`/dashboard/projects/${project.id}`)}
+                    />
+                  ))}
+                </div>
+              )}
+            </motion.div>
 
-        {/* Quick Actions */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.3 }}
-          className="grid grid-cols-1 md:grid-cols-3 gap-4"
-        >
-          <Link
-            href="/dashboard/projects/new"
-            className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.interactive, "p-6 text-center")}
-          >
-            <div className="w-12 h-12 mx-auto mb-3 rounded-xl flex items-center justify-center bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-white/10">
-              <Plus className="w-6 h-6 text-blue-400" />
-            </div>
-            <h3 className="font-medium text-white mb-1">Create Project</h3>
-            <p className="text-sm text-zinc-500">Deploy a new repository from GitHub</p>
-          </Link>
+            {/* Recent Deployments */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.2 }}
+              className="space-y-4"
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold tracking-tight text-white">Recent Deployments</h2>
+                <Link
+                  href="/dashboard/deployments"
+                  className="text-sm text-zinc-400 hover:text-white transition-colors flex items-center gap-1"
+                >
+                  View all
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
 
-          <Link
-            href="/dashboard/deployments"
-            className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.interactive, "p-6 text-center")}
-          >
-            <div className="w-12 h-12 mx-auto mb-3 rounded-xl flex items-center justify-center bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-white/10">
-              <Server className="w-6 h-6 text-cyan-400" />
-            </div>
-            <h3 className="font-medium text-white mb-1">All Deployments</h3>
-            <p className="text-sm text-zinc-500">View and manage all deployments</p>
-          </Link>
+              {isDeploymentsLoading ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4" aria-busy="true" aria-label="Loading deployments">
+                  {[1, 2].map((i) => <DeploymentSkeleton key={i} />)}
+                </div>
+              ) : recentDeployments.length === 0 ? (
+                <EmptyState
+                  icon={Terminal}
+                  title="No deployments yet"
+                  description="Your deployments will appear here once you create a project and push code to GitHub."
+                  actionLabel="Create Project"
+                  onAction={() => setIsDeployModalOpen(true)}
+                />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4" role="list" aria-label="Recent deployments">
+                  {recentDeployments.map((deployment) => (
+                    <DeploymentCard
+                      key={deployment.id}
+                      deployment={deployment}
+                      variant="default"
+                      showActions
+                      onViewLogs={(id) => router.push(`/dashboard/projects/${deployment.projectId}?deployment=${id}`)}
+                      onRetry={(id) => router.push(`/dashboard/projects/${deployment.projectId}?retry=${id}`)}
+                      onStop={(id) => router.push(`/dashboard/projects/${deployment.projectId}?stop=${id}`)}
+                      onOpenLive={(url) => window.open(url, "_blank")}
+                    />
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </div>
 
-          <a
-            href="https://github.com/JainMehul05/CloudScale-project"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={cn(componentStyles.card.base, componentStyles.card.hover, componentStyles.card.interactive, "p-6 text-center")}
-          >
-            <div className="w-12 h-12 mx-auto mb-3 rounded-xl flex items-center justify-center bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-white/10">
-              <ExternalLink className="w-6 h-6 text-violet-400" />
-            </div>
-            <h3 className="font-medium text-white mb-1">Documentation</h3>
-            <p className="text-sm text-zinc-500">Learn more about CloudScale</p>
-          </a>
-        </motion.div>
+          {/* Right Column: Activity Feed */}
+          <div className="lg:col-span-1">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.3 }}
+              className="h-full"
+            >
+              <ActivityFeed limit={10} />
+            </motion.div>
+          </div>
+        </div>
       </div>
-
-      {toast && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -20 }}
-          className={cn(
-            "fixed bottom-4 right-4 z-50 flex items-center justify-between px-4 py-3 rounded-xl border",
-            "animate-in fade-in duration-200",
-            toast.type === "success"
-              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-              : "bg-red-500/10 border-red-500/20 text-red-400"
-          )}
-        >
-          <span className="flex items-center gap-2 text-sm">
-            {toast.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <Square className="w-4 h-4" />}
-            {toast.message}
-          </span>
-          <button onClick={() => setToast(null)} className="ml-4 p-1 hover:bg-white/10 rounded">
-            <Square className="w-4 h-4" />
-          </button>
-        </motion.div>
-      )}
 
       <AnimatePresence>
         {isDeployModalOpen && (
