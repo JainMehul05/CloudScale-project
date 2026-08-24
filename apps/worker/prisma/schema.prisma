@@ -18,6 +18,8 @@ model Project {
   createdAt   DateTime              @default(now())
   deployments Deployment[]
   envVars     EnvironmentVariable[]
+
+  @@index([userId])
 }
 
 enum DeploymentStatus {
@@ -52,6 +54,9 @@ model Deployment {
   deploymentUrl   String?
   project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   deploymentLogs  DeploymentLog[]
+
+  @@index([projectId, status])
+  @@index([status, createdAt])
 }
 
 model DeploymentLog {

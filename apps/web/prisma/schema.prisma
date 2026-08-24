@@ -18,6 +18,8 @@ model Project {
   deployments Deployment[]
   envVars     EnvironmentVariable[]
   createdAt   DateTime     @default(now())
+
+  @@index([userId])
 }
 
 enum DeploymentStatus {
@@ -53,6 +55,9 @@ model Deployment {
   liveUrl         String?
   deploymentUrl   String?
   deploymentLogs  DeploymentLog[]
+
+  @@index([projectId, status])
+  @@index([status, createdAt])
 }
 
 model DeploymentLog {
