@@ -66,16 +66,23 @@ model DeploymentLog {
   @@index([deploymentId, timestamp])
 }
 
-model EnvironmentVariable {
-  id            String   @id @default(uuid())
-  projectId     String
-  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  key           String
-  valueEncrypted String  @db.Text
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+enum Environment {
+  DEVELOPMENT
+  PREVIEW
+  PRODUCTION
+}
 
-  @@unique([projectId, key])
+model EnvironmentVariable {
+  id             String       @id @default(uuid())
+  projectId      String
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  key            String
+  valueEncrypted String       @db.Text
+  environment    Environment  @default(PRODUCTION)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([projectId, key, environment])
 }
 
 model User {
