@@ -4,6 +4,7 @@ import { ReactNode } from "react";
 import { DashboardSidebar } from "./DashboardSidebar";
 import { DashboardHeader } from "./DashboardHeader";
 import { ToastProvider } from "./ToastProvider";
+import { CommandPalette } from "./CommandPalette";
 import { motion } from "framer-motion";
 
 export interface DashboardLayoutProps {
@@ -25,6 +26,7 @@ export function DashboardLayout({
 }: DashboardLayoutProps) {
   return (
     <ToastProvider>
+      <CommandPalette />
       <div className="min-h-screen bg-[#050505]">
         {/* Animated Grid Background */}
         <div
