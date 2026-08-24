@@ -93,6 +93,7 @@ model User {
   sessions             Session[]
   projects             Project[]
   auditLogs            AuditLog[]
+  activityLogs         ActivityLog[]
 }
 
 model Account {
@@ -141,4 +142,15 @@ model AuditLog {
 
   @@index([userId, createdAt])
   @@index([action, createdAt])
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
